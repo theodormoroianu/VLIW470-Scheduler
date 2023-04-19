@@ -13,6 +13,8 @@ class RiscInstruction:
             we care about.
         * The latency of the operation (1 if not mul, 3 if mul).
     The original (unparsed) operation can be found in obj.string_representation.
+
+    If dest_register is -1, it means it is a special register (LC / EC).
     """
     def __init__(
             self,
@@ -89,6 +91,8 @@ class RiscProgram:
         for instruction in instructions:
             # split into words, after removing ',' and 'x'
             content = instruction.replace(",", " ").replace("x", "").split()
+            # split into words, after removing ',' but WITHOUT removing `x`
+            content_with_x = instruction.replace(",", " ").split()
             
             # sanity check
             assert len(content) <= 4
@@ -121,7 +125,27 @@ class RiscProgram:
                         register_dependencies = [addr]
                     else:
                         assert False
+                case "mov":
+                    # can be one of:
+                    # mov LC/EC, imm
+                    # mov dest, imm
+                    # mov dest, source
+                    
+                    # WE ASUME WE CAN'T HAVE mov pX in RISC-V
+                    assert content[1][0] != 'p'
+    
+                    is_alu = True
+
+                    # if special mov, then dest_register is -1
+                    if content[1] in ["LC", "EC"]:
+                        dest_register = -1
+                    else:
+                        dest_register = content[1]
+                        # check if the value is a register or an imm
+                        if content_with_x[2].count('x') == 1:
+                            register_dependencies = [content[2]]
                 case _:
+                    print(f"Unknown operation: {content[0]}")
                     assert False
 
             # convert all the strings to ints
@@ -148,18 +172,22 @@ class RiscProgram:
         BB0, BB1 and BB2.
         """
         # sanity check: should only have one loop.
-        assert len([i for i in instructions if i.startswith("loop")]) == 1
-
-        # read bounds of the loop
-        [(loop_end, loop_begin)] = [
-            (pc, int(instr.split()[-1]))
-            for pc, instr in enumerate(instructions) if instr.startswith("loop")
-        ]
+        assert len([i for i in instructions if i.startswith("loop")]) <= 1
 
         risc_program = RiscProgram()
-        risc_program.BB0 = RiscProgram._parse_instruction_list(instructions[:loop_begin - 1])
-        risc_program.BB0 = RiscProgram._parse_instruction_list(instructions[loop_begin:loop_end + 1])
-        risc_program.BB0 = RiscProgram._parse_instruction_list(instructions[loop_end + 1:])
+
+        has_loop = ([i for i in instructions if i.startswith("loop")] != [])
+        if has_loop:
+            # read bounds of the loop
+            [(loop_end, loop_begin)] = [
+                (pc, int(instr.split()[-1]))
+                for pc, instr in enumerate(instructions) if instr.startswith("loop")
+            ]
+            risc_program.BB0 = RiscProgram._parse_instruction_list(instructions[:loop_begin])
+            risc_program.BB1 = RiscProgram._parse_instruction_list(instructions[loop_begin:loop_end])
+            risc_program.BB2 = RiscProgram._parse_instruction_list(instructions[loop_end + 1:])
+        else:
+            risc_program.BB0 = RiscProgram._parse_instruction_list(instructions)
 
         return risc_program
         
