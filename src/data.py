@@ -2,7 +2,7 @@
 This class defines the datatypes used thoughout the project.
 """
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 
 class RiscInstruction:
@@ -15,6 +15,10 @@ class RiscInstruction:
     The original (unparsed) operation can be found in obj.string_representation.
 
     If dest_register is -1, it means it is a special register (LC / EC).
+
+    It is also important to note that in order to perform register renaming, we need to re-parse and replace
+    register names in the original unparsed operation. This seems tedius, but it is by choice, as it would be
+    even worse to have to save every type of operations and how to rename them.
     """
     def __init__(
             self,
@@ -35,41 +39,42 @@ class RiscInstruction:
         # sanity check
         assert self.is_alu + self.is_mul + self.is_mem == 1
 
-
-class VliwInstructionUnit:
-    """
-    Represents one unit (ALU / MUL / MEM / BRANCH).
-    """
-    def __init__(self, dest_register: Optional[int], string_representation: str):
+    def string_representation_after_register_rename(self, new_dest_register: Optional[int], rename_fn: Callable[[int], int]):
         """
-        dest_register: destination register of the instruction, if there is one.
-        string_representation: string representation of the instruction.
+        renames the instruction, respecting the register renaming.
+        The idea is to extract registers (starting at 'x') and pass them through rename
         """
-        self.dest_register = dest_register
-        self.string_representation = string_representation
+        # should not have a new destination register if we didn't have one in the first place.
+        # similarely, we should have one if we had a destination register initially.
+        assert ((new_dest_register is None) ^ (self.dest_register is None)) == False
 
+        ans = self.string_representation
+        last_x_location = -1
+        is_first_iteration = True
 
-class VliwInstruction:
-    """
-    Defines a very large instruction word.
-    TODO: Check if we actually need more stuff in here.
-    """
-    def __init__(self):
-        self.alu0: Optional[VliwInstructionUnit] = None
-        self.alu1: Optional[VliwInstructionUnit] = None
-        self.mul: Optional[VliwInstructionUnit] = None
-        self.mem: Optional[VliwInstructionUnit] = None
-        self.branch: Optional[VliwInstructionUnit] = None
+        while ans.find('x', last_x_location) != -1:
+            # still have a register to rename
+            last_x_location = ans.find('x', last_x_location)
+            st = last_x_location + 1
+            dr = st
+            while dr + 1 < len(ans) and ans[dr + 1].isnumeric():
+                dr += 1
+            reg = int(ans[st:dr+1])
+            
+            if is_first_iteration and self.dest_register is not None:
+                # have to rename the destination register
+                assert reg == self.dest_register
+                ans = ans[:st] + str(new_dest_register) + ans[dr + 1:]
+            else:
+                assert reg in self.register_dependencies
+                ans = ans[:st] + str(rename_fn(reg)) + ans[dr+1:]
+            
+            # no longer the first iteration
+            is_first_iteration = False
+        
+        return ans
 
-    def to_list(self) -> list[str]:
-        """
-        Dumps the VLIW instruction
-        """
-        return [
-            i.string_representation if i is not None else "nop"
-            for i in [self.alu0, self.alu1, self.mul, self.mem, self.branch]
-        ]
-
+            
 
 class RiscProgram:
     """
@@ -190,4 +195,66 @@ class RiscProgram:
             risc_program.BB0 = RiscProgram._parse_instruction_list(instructions)
 
         return risc_program
+        
+
+
+class VliwInstructionUnit:
+    """
+    Represents one unit (ALU / MUL / MEM / BRANCH).
+    """
+    def __init__(self, dest_register: Optional[int], string_representation: str):
+        """
+        dest_register: destination register of the instruction, if there is one.
+        string_representation: string representation of the instruction.
+        """
+        self.dest_register = dest_register
+        self.string_representation = string_representation
+
+
+class VliwInstruction:
+    """
+    Defines a very large instruction word.
+    TODO: Check if we actually need more stuff in here.
+    """
+    def __init__(self):
+        self.alu0: Optional[VliwInstructionUnit] = None
+        self.alu1: Optional[VliwInstructionUnit] = None
+        self.mul: Optional[VliwInstructionUnit] = None
+        self.mem: Optional[VliwInstructionUnit] = None
+        self.branch: Optional[VliwInstructionUnit] = None
+
+    def to_list(self) -> list[str]:
+        """
+        Dumps the VLIW instruction
+        """
+        return [
+            i.string_representation if i is not None else "nop"
+            for i in [self.alu0, self.alu1, self.mul, self.mem, self.branch]
+        ]
+
+class VliwProgram:
+    """
+    Encodes a Vliw program.
+    In this particular case, we can keep the same format as for the RISC program, which is:
+     * BB0, or the initialization code.
+     * BB1, or the in-loop code.
+     * BB2, or the finalization code.
+    """
+
+    def __init__(self):
+        self.BB0: list[VliwInstruction] = []
+        self.BB1: list[VliwInstruction] = []
+        self.BB2: list[VliwInstruction] = []
+
+    def dump(self):
+        """
+        Dumps into a list of lists, which can be serialized into an output.
+        """
+        return [
+            i.to_list() for i in self.BB0
+        ] + [
+            i.to_list() for i in self.BB1
+        ] + [
+            i.to_list() for i in self.BB2
+        ]
         
