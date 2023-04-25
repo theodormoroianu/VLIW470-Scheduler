@@ -9,7 +9,19 @@ def try_to_find_schedule_with_given_II(risc: data.RiscProgram, is_pip: bool, ii:
     to do the initial / final stuff independently.
     """
     # TODO: Implement this.
-    return None
+
+    # sanity check (ii must be set if `is_pip` == False)
+    assert is_pip or ii != -1
+
+    result = data.VliwProgram()
+    result.schedule_BB0(risc, is_pip)
+    result.schedule_BB1(risc, is_pip, ii)
+    
+    if result.invalid_schedule():
+        return None
+    
+    result.schedule_BB2(risc, is_pip)
+    return result
 
 def generate_loop_schedule(risc: data.RiscProgram) -> data.VliwProgram:
     """
