@@ -2,55 +2,58 @@
 This class defines the datatypes used thoughout the project.
 """
 
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Tuple, Dict
 
 class RegisterDependency:
     """
-    Defines a register dependency in a RISC-V program. 
+    Defines a register dependency in a RISC-V program.
     A dependency can be either:
         * local -> the producer is in the same basic block
         * interloop -> the producer is in a different basic block
                         (either BB0 or BB1 of a previous iteration)
-        * loop_invariant -> the producer is in BB0 and the consumer 
+        * loop_invariant -> the producer is in BB0 and the consumer
                             is in either BB1 or BB2
         * post_loop -> the producer is in BB1 and the consumer is in BB2
-    
+
     The dependency category and the index of the producer instructions
     are to be determined after the program is parsed
     """
     def __init__(self, reg_tag: int):
         self.reg_tag = reg_tag
-        self.producer_idx = -1
-        self.producer_BB = -1
+        self.producers_idx = []
         self.is_local = False
         self.is_interloop = False
         self.is_loop_invariant = False
         self.is_post_loop = False
 
-    def set_dep_type(self, dep_type: str, producer_idx: int, producer_BB: int):
-        assert dep_type is in {"local", "interloop", "loop_invariant", "post_loop"}
+    def set_dep_type(self, dep_type: str, producer_idx: Optional[int]):
+        if producer_idx is None:
+            return
 
+        assert dep_type in {"local", "interloop", "loop_invariant", "post_loop"}
         match dep_type:
             case "local":
-                 self.is_local = True
+                self.is_local = True
             case "interloop":
                 self.is_interloop = True
             case "loop_invariant":
                 self.is_loop_invariant = True
             case "post_loop":
                 self.is_post_loop = True
-        
-        self.producer_idx = producer_idx
-        self.producer_BB = producer_BB
 
-        assert self.producer_BB is in {0, 1, 2}
+        self.producers_idx.append(producer_idx)
+
         assert self.is_local + self.is_interloop + \
                 self.is_loop_invariant + self.is_post_loop == 1
+        if self.is_interloop:
+            assert len(self.producers_idx) <= 2
+        else:
+            assert len(self.producers_idx) == 1
 
 
 class RiscInstruction:
     """
-    Defines a standard RISC-V instruction, EXCEPT loops.
+    Defines a standard RISC-V instruction.
     It abstracts away WHAT the operation is doing, and only focuses on:
         * The registers used by the operation, as this is essentially what
             we care about.
@@ -77,6 +80,7 @@ class RiscInstruction:
         self.is_alu = is_alu
         self.is_mul = is_mul
         self.is_mem = is_mem
+        self.latency = 3 if self.is_mul else 1
         self.string_representation = string_representation
 
         # sanity check
@@ -104,7 +108,7 @@ class RiscInstruction:
             while dr + 1 < len(ans) and ans[dr + 1].isnumeric():
                 dr += 1
             reg = int(ans[st:dr+1])
-            
+
             if is_first_iteration and self.dest_register is not None:
                 # have to rename the destination register
                 assert reg == self.dest_register
@@ -112,13 +116,25 @@ class RiscInstruction:
             else:
                 assert reg in self.register_dependencies
                 ans = ans[:st] + str(rename_fn(reg)) + ans[dr+1:]
-            
+
             # no longer the first iteration
             is_first_iteration = False
-        
+
         return ans
 
-            
+
+    def get_last_producer(self) -> Optional[int]:
+        """
+        Returns the index of the last producer instruction in program order.
+        """
+        result = -1
+        for dep in self.register_dependencies:
+            result = max(result, dep.producers_idx)
+
+        if result == -1:
+            result = None
+        return result
+
 
 class RiscProgram:
     """
@@ -130,29 +146,20 @@ class RiscProgram:
     """
 
     def __init__(self):
-        self.BB0: list[RiscInstruction] = []
-        self.BB1: list[RiscInstruction] = []
-        self.BB2: list[RiscInstruction] = []
+        self.program: list[RiscInstruction] = []
+        self.BB1_start: int = 0
+        self.BB2_start: int = 0
 
 
-    def get_instruction(self, instruction_idx: int, BB_idx: int) -> RiscInstruction:
-        assert BB_idx is in {0, 1, 2}
-        match BB_idx:
-            case 0:
-                return self.BB0[instruction_idx]
-            case 1:
-                return self.BB1[instruction_idx]
-            case 2:
-                return self.BB2[instruction_idx]
-
+    @staticmethod
     def _parse_instruction_list(instructions: list[str]) -> list[RiscInstruction]:
         ans = []
-        for idx, instruction in enumerate(instructions):
+        for instruction in instructions:
             # split into words, after removing ',' and 'x'
             content = instruction.replace(",", " ").replace("x", "").split()
             # split into words, after removing ',' but WITHOUT removing `x`
             content_with_x = instruction.replace(",", " ").split()
-            
+
             # sanity check
             assert len(content) <= 4
 
@@ -189,10 +196,10 @@ class RiscProgram:
                     # mov LC/EC, imm
                     # mov dest, imm
                     # mov dest, source
-                    
+
                     # WE ASUME WE CAN'T HAVE mov pX in RISC-V
                     assert content[1][0] != 'p'
-    
+
                     is_alu = True
 
                     # if special mov, then dest_register is -1
@@ -225,86 +232,108 @@ class RiscProgram:
 
         return ans
 
-    """
-    Returns the index of a dependency in the same BB.
-    """
-    def _find_local_dependency(self, instr_idx: int, BB_idx: int, dep: RegisterDependency) -> Union[int, None]:
-        for pord_idx in range(instr_idx - 1, -1, -1):
-            if self.get_instruction(instr_idx, BB_idx).dest_register == dep.reg_tag:
-                return pord_idx
+    def _find_local_dependency(self, instr_idx: int, dep: RegisterDependency) -> Optional[int]:
+        """
+        Returns the index of a dependency in the same BB.
+        """
+        if instr_idx >= self.BB2_start:
+            stop_BB = self.BB2_start - 1
+        elif instr_idx >= self.BB1_start:
+            stop_BB = self.BB1_start - 1
+        else:
+            stop_BB = -1
+
+        for prod_idx in range(instr_idx - 1, stop_BB, -1):
+            if self.program[prod_idx].dest_register == dep.reg_tag:
+                return prod_idx
         return None
 
 
-    """
-    Returns the index of an interloop dependency. It is only called for BB1.
-    """
-    # TODO: figure out if we need to store the index of the producer in BB0 as well
-    def _find_interloop_dependency(self, instr_idx: int, dep: RegisterDependency) -> Union[int, None]:
-        for pord_idx in range(len(self.BB1) - 1, instr_idx, -1):
-            if self.get_instruction(instr_idx, 1).dest_register == dep.reg_tag:
-                return pord_idx
-        return None
+    def _find_interloop_dependency(self, instr_idx: int, dep: RegisterDependency) -> Optional[list[int, int]]:
+        """
+        Returns the indexes of an interloop dependency (can be at most 2). 
+        It is only called for BB1.
+        """
+        result = []
+        # first search inside BB1
+        for prod_idx in range(self.BB2_start - 1, instr_idx, -1):
+            if self.program[prod_idx].dest_register == dep.reg_tag:
+                result.append(prod_idx)
+                break
 
-
-    """
-    Returns the index of an loop invariant dependency. It is called in BB1 and BB2.
-    """
-    def _find_loop_invariant_dependency(self, dep: RegisterDependency) -> Union[int, None]:
-        for pord_idx in range(len(self.BB0) - 1, -1, -1):
-            if self.get_instruction(instr_idx, 0).dest_register == dep.reg_tag:
-                return pord_idx
-        return None
+        # now search inside BB0
+        for prod_idx in range(self.BB1_start - 1, -1, -1):
+            if self.program[prod_idx].dest_register == dep.reg_tag:
+                result.append(prod_idx)
+                break
         
+        if len(result) == 0:
+            return None
+        else:
+            return result
 
-    """
-    Returns the index of an post loop dependency. It is only called in BB2.
-    """
-    def _find_post_loop_dependency(self, dep: RegisterDependency) -> Union[int, None]:
-        for pord_idx in range(len(self.BB1) - 1, -1, -1):
-            if self.get_instruction(instr_idx, 1).dest_register == dep.reg_tag:
-                return pord_idx
+    def _find_loop_invariant_dependency(self, dep: RegisterDependency) -> Optional[int]:
+        """
+        Returns the index of an loop invariant dependency. It is called in BB1 and BB2.
+        """
+        for prod_idx in range(self.BB1_start - 1, -1, -1):
+            if self.program[prod_idx].dest_register == dep.reg_tag:
+                return prod_idx
         return None
 
 
-    def _perform_dependency_analysis(self):
+    def _find_post_loop_dependency(self, dep: RegisterDependency) -> Optional[int]:
+        """
+        Returns the index of an post loop dependency. It is only called in BB2.
+        
+        The order of lokking for dependecies is important, as we should look for 
+        interloop dependencies before loop invariant dependencies.
+        """
+        for prod_idx in range(self.BB2_start - 1, self.BB1_start - 1, -1):
+            if self.program[prod_idx].dest_register == dep.reg_tag:
+                return prod_idx
+        return None
+
+
+    def perform_dependency_analysis(self):
         # find dependecies for instructions in BB0
-        for idx, instruction in enumerate(self.BB0):
+        for idx, instruction in enumerate(self.program[:self.BB1_start]):
             for dep in instruction.register_dependencies:
                 prod_idx = self._find_local_dependency(idx, dep)
-                dep.set_dep_type("local", pord_idx, 0)
-                assert prod_idx is not None
+                dep.set_dep_type("local", prod_idx)
 
         # find dependecies for instructions in BB1
-        for idx, instruction in enumerate(self.BB1):
+        for idx, instruction in enumerate(self.program[self.BB1_start:self.BB2_start]):
             for dep in instruction.register_dependencies:
                 prod_idx = self._find_local_dependency(idx, dep)
                 if prod_idx is not None:
-                    dep.set_dep_type("local", pord_idx, 1)
+                    dep.set_dep_type("local", prod_idx)
                 else:
-                    pord_idx = self._find_interloop_dependency(idx, dep)
+                    prod_idx = self._find_interloop_dependency(idx, dep)
                     if prod_idx is not None:
-                        dep.set_dep_type("interloop", prod_idx, 1)
+                        dep.set_dep_type("interloop", prod_idx)
                     else:
                         prod_idx = self._find_loop_invariant_dependency(dep)
-                        dep.set_dep_type("loop_invariant", prod_idx, 0)
+                        dep.set_dep_type("loop_invariant", prod_idx)
                         assert prod_idx is not None
 
         # find dependecies for instructions in BB2
-        for idx, instruction in enumerate(self.BB2):
+        for idx, instruction in enumerate(self.program[self.BB2_start:]):
             for dep in instruction.register_dependencies:
                 prod_idx = self._find_local_dependency(idx, dep)
                 if prod_idx is not None:
-                    dep.set_dep_type("local", pord_idx, 2)
+                    dep.set_dep_type("local", prod_idx)
                 else:
-                    pord_idx = self._find_post_loop_dependency(dep)
+                    prod_idx = self._find_post_loop_dependency(dep)
                     if prod_idx is not None:
-                        dep.set_dep_type("post_loop", prod_idx, 1)
+                        dep.set_dep_type("post_loop", prod_idx)
                     else:
                         prod_idx = self._find_loop_invariant_dependency(dep)
-                        dep.set_dep_type("loop_invariant", prod_idx, 0)
+                        dep.set_dep_type("loop_invariant", prod_idx)
                         assert prod_idx is not None
 
 
+    @staticmethod
     def load_from_list(instructions: list[str]):
         """
         Creates and returns a RiscProgram, splitting it correctly into
@@ -322,16 +351,21 @@ class RiscProgram:
                 (pc, int(instr.split()[-1]))
                 for pc, instr in enumerate(instructions) if instr.startswith("loop")
             ]
-            risc_program.BB0 = RiscProgram._parse_instruction_list(instructions[:loop_begin])
-            risc_program.BB1 = RiscProgram._parse_instruction_list(instructions[loop_begin:loop_end])
-            risc_program.BB2 = RiscProgram._parse_instruction_list(instructions[loop_end + 1:])
+            BB0 = RiscProgram._parse_instruction_list(instructions[:loop_begin])
+            BB1 = RiscProgram._parse_instruction_list(instructions[loop_begin:loop_end])
+            BB2 = RiscProgram._parse_instruction_list(instructions[loop_end + 1:])
         else:
-            risc_program.BB0 = RiscProgram._parse_instruction_list(instructions)
-
-        risc_program._perform_dependency_analysis()
+            BB0 = RiscProgram._parse_instruction_list(instructions)
+            BB1 = BB2 = []
+        
+        risc_program.program = BB0 + BB1 + BB2
+        risc_program.BB1_start = len(BB0)
+        risc_program.BB2_start = len(BB0) + len(BB1)
+        
+        risc_program.perform_dependency_analysis()
 
         return risc_program
-        
+
 
 
 class VliwInstructionUnit:
@@ -359,6 +393,34 @@ class VliwInstruction:
         self.mem: Optional[VliwInstructionUnit] = None
         self.branch: Optional[VliwInstructionUnit] = None
 
+    def try_to_set_instruction(self, instruction: RiscInstruction) -> bool:
+        """
+        Tries to update the corresponding unit and returns `True/False` if it succedeed (if the unit is free or not)
+        """
+        vliw_instruction = VliwInstructionUnit(instruction.dest_register, instruction.string_representation)
+        if instruction.is_alu:
+            if self.alu0 is not None:
+                self.alu0 = vliw_instruction
+                return True
+            elif self.alu1 is not None:
+                self.alu1 = vliw_instruction
+                return True
+
+        elif instruction.is_mul and self.mul is not None:
+            self.mul = vliw_instruction
+            return True
+
+        elif instruction.is_mem and self.mem is not None:
+            self.mem = vliw_instruction
+            return True
+        
+        elif instruction.is_branch and self.branch is not None:
+            self.branch = vliw_instruction
+            return True
+
+        return False
+
+
     def to_list(self) -> list[str]:
         """
         Dumps the VLIW instruction
@@ -367,7 +429,7 @@ class VliwInstruction:
             i.string_representation if i is not None else "nop"
             for i in [self.alu0, self.alu1, self.mul, self.mem, self.branch]
         ]
-    
+
     def dest_registers(self):
         """
         Returns all of the destination registers created by this VLIW
@@ -381,43 +443,43 @@ class VliwInstruction:
 class VliwProgram:
     """
     Encodes a Vliw program.
-    In this particular case, we can keep the same format as for the RISC program, which is:
-     * BB0, or the initialization code.
-     * BB1, or the in-loop code.
-     * BB2, or the finalization code.
     """
 
     def __init__(self):
-        self.BB0: list[VliwInstruction] = []
-        self.BB1: list[VliwInstruction] = []
-        self.BB2: list[VliwInstruction] = []
+        self.program: list[VliwInstruction] = []
+        self.risc_pos_to_vliw_pos: Dict[int, int] = {}
 
-        self.instruction_cycle = []
+
+    def schedule_risc_instruction(self, risc: RiscProgram, instruction: RiscInstruction):
+        """
+        Finds the earliest cycle an instruction can be scheduled at in the context of a RISC program
+        """
+        # account for dependencies
+        last_dep = instruction.get_last_producer()
+        if last_dep is None:
+            offset = 0
+        else:
+            offset = self.risc_pos_to_vliw_pos[last_dep]
+            offset += risc.program[last_dep].latency
+        
+        # find the first available slot
+        if offset >= len(self.program):
+            self.program += [VliwInstruction()] * (len(self.program) - offset + 1)
+        for idx in range(offset, len(self.program)):
+
+
+    def update_schedule(self, scheduling: list[VliwInstruction]):
+        """
+        Updates the current program with the scheduling of a new BB.
+        """
+        # TODO: how do we implement this
 
     def dump(self):
         """
         Dumps into a list of lists, which can be serialized into an output.
         """
-        return [
-            i.to_list() for i in self.BB0
-        ] + [
-            i.to_list() for i in self.BB1
-        ] + [
-            i.to_list() for i in self.BB2
-        ]
+        return [i.to_list() for i in self.program]
 
-    def invalid_schedule(self):
-        pass
-
-    def schedule_BB0(self, risc: RiscProgram, is_pip: bool):
-        pass
-    
-    def schedule_BB1(self, risc: RiscProgram, is_pip: bool, ii: int):
-        pass
-    
-    def schedule_BB2(self, risc: RiscProgram, is_pip: bool):
-        pass
-        
 
 class RegisterRename:
     """
@@ -450,12 +512,12 @@ class RegisterRename:
         assert self.next_free_rotating_register < 96
         self.risc_to_vliw_registers[risc_register] = self.next_free_rotating_register
         self.next_free_rotating_register += 1
-    
+
     def find_corresponding_VLIW_register(self, risc_register: int):
         """
         Finds and returns the VLIW register associated currently to our RISC register.
         """
         assert risc_register in self.risc_to_vliw_registers
         return self.risc_to_vliw_registers[risc_register]
-    
-    
+
+
