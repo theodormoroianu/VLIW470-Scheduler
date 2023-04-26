@@ -4,7 +4,8 @@ Entry point of the program.
 
 import sys
 import json
-import data
+import risc
+import vliw
 import scheduler
 
 def main():
@@ -14,7 +15,7 @@ def main():
 
     print(f"Loading file...")
     input_file_content = json.load(open(INPUT_FILE, "r"))
-    risc_program = data.RiscProgram.load_from_list(input_file_content)
+    risc_program = risc.RiscProgram.load_from_list(input_file_content)
     
     print(f"File loaded.\nTrying to generate loop schedule...")
     vliw_program = scheduler.generate_loop_schedule(risc_program)
