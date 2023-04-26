@@ -148,6 +148,10 @@ class VliwProgram:
             loop_tag += 1
 
         # determine where to put the loop so that the II is valid
+        ii = 1
+        for instruction in risc.program[risc.BB1_start:risc.BB2_start]:
+            for dep in instruction.register_dependencies:
+                if dep.is_interloop:
 
 
 
@@ -172,7 +176,7 @@ class RegisterRename:
     """
     def __init__(self):
         # map from initial registers to the associated VLIW register
-        self.risc_to_vliw_registers = dict()
+        self.risc_to_vliw_registers = {}
 
         # ID of the next free non-rotating register we can use in BB0
         self.next_free_non_rotating_register = 0

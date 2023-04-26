@@ -256,17 +256,17 @@ class RiscProgram:
             if self.program[prod_idx].dest_register == dep.reg_tag:
                 result.append(prod_idx)
                 break
+        
+        if len(result) == 0:
+            return None
 
-        # now search inside BB0
+        # if we found something in BB1 then search inside BB0 
         for prod_idx in range(self.BB1_start - 1, -1, -1):
             if self.program[prod_idx].dest_register == dep.reg_tag:
                 result.append(prod_idx)
                 break
         
-        if len(result) == 0:
-            return None
-        else:
-            return result
+        return result
 
     def _find_loop_invariant_dependency(self, dep: RegisterDependency) -> Optional[int]:
         """
@@ -281,9 +281,6 @@ class RiscProgram:
     def _find_post_loop_dependency(self, dep: RegisterDependency) -> Optional[int]:
         """
         Returns the index of an post loop dependency. It is only called in BB2.
-        
-        The order of lokking for dependecies is important, as we should look for 
-        interloop dependencies before loop invariant dependencies.
         """
         for prod_idx in range(self.BB2_start - 1, self.BB1_start - 1, -1):
             if self.program[prod_idx].dest_register == dep.reg_tag:
