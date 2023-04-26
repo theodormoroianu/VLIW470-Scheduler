@@ -27,7 +27,7 @@ class VliwInstruction:
         self.mem: Optional[VliwInstructionUnit] = None
         self.branch: Optional[VliwInstructionUnit] = None
 
-    def try_to_set_instruction(self, instruction: risc_ds.RiscInstruction, idx: int) -> bool:
+    def try_to_set_instruction(self, instruction: risc_ds.RiscInstruction, idx: Optional[int]) -> bool:
         """
         Tries to update the corresponding unit and returns `True/False` if it succedeed (if the unit is free or not)
         It does NOT work for loops
@@ -149,10 +149,23 @@ class VliwProgram:
 
         # determine where to put the loop so that the II is valid
         ii = 1
-        for instruction in risc.program[risc.BB1_start:risc.BB2_start]:
+        for idx, instruction in enumerate(risc.program[risc.BB1_start:risc.BB2_start]):
             for dep in instruction.register_dependencies:
                 if dep.is_interloop:
+                    dep_idx = dep.producers_idx[0]
+                    dep_vliw_pos = self.risc_pos_to_vliw_pos[dep_idx]
+                    dep_latency = risc.program[dep_idx].latency
+                    instr_vliw_pos = self.risc_pos_to_vliw_pos[idx + risc.BB1_start]
+                    ii = max(ii, dep_vliw_pos + dep_latency - instr_vliw_pos)
+        
+        if ii <= len(self.program):
+            self.program += [VliwInstruction()] * (len(self.program) - ii + 1)
 
+        self.program[ii].branch = VliwInstructionUnit(
+                                        dest_register=None, 
+                                        string_representation=f"loop {loop_tag}",
+                                        risc_idx=None
+                                        )
 
 
     def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram):
