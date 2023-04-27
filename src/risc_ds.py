@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Tuple, Dict
+from typing import Callable, List, Optional 
 
 class RegisterDependency:
     """
@@ -78,6 +78,13 @@ class RiscInstruction:
         self.is_mem = is_mem
         self.latency = 3 if self.is_mul else 1
         self.string_representation = string_representation
+
+        if is_alu:
+            self.opcode = "alu"
+        elif is_mul:
+            self.opcode = "mul"
+        else:
+            self.opcode = "mem"
 
         # sanity check
         assert self.is_alu + self.is_mul + self.is_mem == 1

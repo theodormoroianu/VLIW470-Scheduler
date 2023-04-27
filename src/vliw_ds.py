@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Tuple, Dict
+from typing import Optional, Dict, Set, Tuple
 import risc_ds
 
 class VliwInstructionUnit:
@@ -27,37 +27,37 @@ class VliwInstruction:
         self.mem: Optional[VliwInstructionUnit] = None
         self.branch: Optional[VliwInstructionUnit] = None
 
-    def try_to_set_instruction(self, instruction: risc_ds.RiscInstruction, idx: Optional[int]) -> bool:
+    def try_to_set_instruction(self, instruction: risc_ds.RiscInstruction, idx: Optional[int]) -> Optional[str]:
         """
-        Tries to update the corresponding unit and returns `True/False` if it succedeed (if the unit is free or not)
-        It does NOT work for loops
+        Tries to update the corresponding unit.
+        It returns the associated execution unit on success and None on failure.
+        It does NOT work for loops.
         """
         vliw_instruction = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, idx)
         if instruction.is_alu:
             if self.alu0 is not None:
                 self.alu0 = vliw_instruction
-                return True
+                return "alu0"
             elif self.alu1 is not None:
                 self.alu1 = vliw_instruction
-                return True
+                return "alu1"
 
         elif instruction.is_mul and self.mul is not None:
             self.mul = vliw_instruction
-            return True
+            return "mul"
 
         elif instruction.is_mem and self.mem is not None:
             self.mem = vliw_instruction
-            return True
+            return "mem"
         
         return False
 
     
     def is_empty(self) -> bool:
         """
-        Checks if the instruction is all nop's
+        Checks if the instruction is all nops
         """
-        return self.alu0 is None and self.alu1 is None and \
-                self.mul is None and self.mem is None and self.branch is None
+        return self.to_list() == ["nop"] * 5
 
     def to_list(self) -> list[str]:
         """
@@ -86,17 +86,19 @@ class VliwProgram:
     def __init__(self):
         self.program: list[VliwInstruction] = []
         self.risc_pos_to_vliw_pos: Dict[int, int] = {}
-
+        self.unavailable_slots: Set[Tuple[int, str]] = set()
 
     def schedule_risc_instruction(
             self, 
             risc: risc_ds.RiscProgram,
             instruction: risc_ds.RiscInstruction, 
             instr_idx: int,
-            schedule_start_pos: int
+            schedule_start_pos: int,
+            ii: Optional[int]
             ):
         """
         Finds the earliest cycle an instruction can be scheduled at in the context of a RISC program
+        If ii is not None it means we are scheduling for `loop.pip` and we should mark unavailable slots
         """
         # account for dependencies
         last_dep = instruction.get_last_producer()
@@ -107,16 +109,29 @@ class VliwProgram:
             offset += risc.program[last_dep].latency
         
         # find the first available slot
-        if offset >= len(self.program):
-            self.program += [VliwInstruction()] * (len(self.program) - offset + 1)
         # it has to find a slot eventually
-        for idx in range(offset, len(self.program)):
-            if self.program[idx].try_to_set_instruction(instruction, instr_idx):
+        idx = offset - 1
+        while True:
+            idx += 1
+
+            used_exec_unit = self.program[idx].try_to_set_instruction(instruction, instr_idx, ii)
+            if used_exec_unit is not None:
+                # will only be executed in case of `loop.pip`
+                if ii is not None:
+                    bundle_pos = (idx - schedule_start_pos) // ii
+                    if (bundle_pos, used_exec_unit) in self.unavailable_slots:
+                        continue
+                    else:
+                        self.unavailable_slots.add((bundle_pos, used_exec_unit))
+                
+                if idx >= len(self.program):
+                    self.program += [VliwInstruction()] * (len(self.program) - idx + 1)
+
                 self.risc_pos_to_vliw_pos[instr_idx] = idx 
                 break
 
 
-    def schedule_loopless_instructions(self, risc: risc_ds.RiscProgram, BB: str):
+    def schedule_loopless_instructions(self, risc: risc_ds.RiscProgram, BB: str, ii: Optional[int] = None):
         """
         Schedules instructions in a single BB in the context of a RISC program
         """
@@ -133,12 +148,27 @@ class VliwProgram:
 
         for idx in range(start, stop):
             instruction = risc.program[idx]
-            self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos)
+            self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos, ii)
             
+    
+    def _compute_min_ii(self, risc: risc_ds.RiscProgram, instr_idx: int) -> int:
+        """
+        Computes the minimum II required to schedule instruction at index `instr_idx`
+        """
+        instruction = risc.program[instr_idx]
+        ii = 1
+        for dep in instruction.register_dependencies:
+            if dep.is_interloop:
+                dep_idx = dep.producers_idx[0]
+                dep_vliw_pos = self.risc_pos_to_vliw_pos[dep_idx]
+                dep_latency = risc.program[dep_idx].latency
+                instr_vliw_pos = self.risc_pos_to_vliw_pos[instr_idx + risc.BB1_start]
+                ii = max(ii, dep_vliw_pos + dep_latency - instr_vliw_pos)
+        return ii
 
     def schedule_loop_instructions(self, risc: risc_ds.RiscProgram):
         """
-        Schedules instructions in BB1 in the context of a RISC program with the `loop` instruction
+        Schedules instructions in BB1 in the context of a RISC program for `loop`
         """
         # schedule normally
         loop_tag = len(self.program)
@@ -149,14 +179,8 @@ class VliwProgram:
 
         # determine where to put the loop so that the II is valid
         ii = 1
-        for idx, instruction in enumerate(risc.program[risc.BB1_start:risc.BB2_start]):
-            for dep in instruction.register_dependencies:
-                if dep.is_interloop:
-                    dep_idx = dep.producers_idx[0]
-                    dep_vliw_pos = self.risc_pos_to_vliw_pos[dep_idx]
-                    dep_latency = risc.program[dep_idx].latency
-                    instr_vliw_pos = self.risc_pos_to_vliw_pos[idx + risc.BB1_start]
-                    ii = max(ii, dep_vliw_pos + dep_latency - instr_vliw_pos)
+        for idx in range(risc.BB1_start, risc.BB2_start):
+            ii = max(ii, self._compute_min_ii(risc, idx))
         
         if ii <= len(self.program):
             self.program += [VliwInstruction()] * (len(self.program) - ii + 1)
@@ -168,11 +192,41 @@ class VliwProgram:
                                         )
 
 
-    def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram):
+    def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram, ii: int) -> bool:
         """
-        Schedules instructions in BB1 in the context of a RISC program with the `loop_pip` instruction
+        Schedules instructions in BB1 in the context of a RISC program for `loop_pip`.
+        It returns True on success or False if the II is too small.
         """
+        loop_tag = len(self.program)
+        schedule_start_pos = len(self.program)
 
+        for idx in range(risc.BB1_start, risc.BB2_start):
+            instruction = risc.program[idx]
+            self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos, ii)
+
+            # check if the II is large enough
+            if self._compute_min_ii(risc, idx) > ii:
+                # restore the state of `self`(undo the scheduling)
+                self.unavailable_slots = set()
+                self.program = self.program[:schedule_start_pos]
+                to_erase = [k for (k, v) in self.program.risc_pos_to_vliw_pos.items() \
+                            if v >= schedule_start_pos]
+                for k in to_erase:
+                    self.risc_pos_to_vliw_pos.pop(k)
+
+                return False
+        
+        # ignore any empty bundles
+        while self.program[loop_tag].is_empty():
+            loop_tag += 1
+        
+        self.program[ii].branch = VliwInstructionUnit(
+                                        dest_register=None, 
+                                        string_representation=f"loop {loop_tag}",
+                                        risc_idx=None
+                                        )
+
+        return True
 
     def dump(self):
         """
