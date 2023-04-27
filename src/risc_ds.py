@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional 
+from typing import Callable, List, Optional, Union
 
 class RegisterDependency:
     """
@@ -24,7 +24,7 @@ class RegisterDependency:
         self.is_loop_invariant = False
         self.is_post_loop = False
 
-    def set_dep_type(self, dep_type: str, producer_idx: Optional[int]):
+    def set_dep_type(self, dep_type: str, producer_idx: Optional[Union[int, List[int]]]):
         if producer_idx is None:
             return
 
@@ -39,7 +39,11 @@ class RegisterDependency:
             case "post_loop":
                 self.is_post_loop = True
 
-        self.producers_idx.append(producer_idx)
+        # TEO TODO: Check this is ok now.
+        if type(producer_idx) == list:
+            self.producers_idx += producer_idx
+        else:
+            self.producers_idx.append(producer_idx)
 
         assert self.is_local + self.is_interloop + \
                 self.is_loop_invariant + self.is_post_loop == 1
@@ -96,6 +100,7 @@ class RiscInstruction:
         """
         Returns the index of the last producer instruction in program order.
         """
+        # TEO TODO: If we are in the loop body, and have A B C, where A and C are producers of B. Then A should be the last one right?
         result = -1
         for dep in self.register_dependencies:
             result = max(result, dep.producers_idx)

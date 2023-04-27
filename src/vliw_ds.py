@@ -35,6 +35,7 @@ class VliwInstruction:
         """
         vliw_instruction_unit = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, idx)
         if instruction.is_alu:
+            # TEO TODO: I think it should be None instead of not None.
             if self.alu0 is not None:
                 self.alu0 = vliw_instruction_unit
                 return "alu0"
