@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Set, Tuple
+from typing import Optional, Dict, Set, Tuple 
 import risc_ds
 
 class VliwInstructionUnit:
@@ -233,45 +233,4 @@ class VliwProgram:
         Dumps into a list of lists, which can be serialized into an output.
         """
         return [i.to_list() for i in self.program]
-
-
-class RegisterRename:
-    """
-    Handles register renaming.
-    TODO: Make this class actually work.
-        Due to how RRB works, the current assignement of rotating registers is 99% wrong.
-    """
-    def __init__(self):
-        # map from initial registers to the associated VLIW register
-        self.risc_to_vliw_registers = {}
-
-        # ID of the next free non-rotating register we can use in BB0
-        self.next_free_non_rotating_register = 0
-
-        # ID of the next free rotating register we can use in BB1 and BB2
-        self.next_free_rotating_register = 32
-
-    def rename_non_rotating(self, risc_register: int):
-        """
-        Associates and returns the new non-rotating VLIW register associated to our register.
-        """
-        assert self.next_free_non_rotating_register < 32
-        self.risc_to_vliw_registers[risc_register] = self.next_free_non_rotating_register
-        self.next_free_non_rotating_register += 1
-
-    def rename_rotating(self, risc_register: int):
-        """
-        Associates and returns the new rotating VLIW register associated to our register.
-        """
-        assert self.next_free_rotating_register < 96
-        self.risc_to_vliw_registers[risc_register] = self.next_free_rotating_register
-        self.next_free_rotating_register += 1
-
-    def find_corresponding_VLIW_register(self, risc_register: int):
-        """
-        Finds and returns the VLIW register associated currently to our RISC register.
-        """
-        assert risc_register in self.risc_to_vliw_registers
-        return self.risc_to_vliw_registers[risc_register]
-
-
+    

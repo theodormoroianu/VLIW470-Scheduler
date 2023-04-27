@@ -89,42 +89,6 @@ class RiscInstruction:
         # sanity check
         assert self.is_alu + self.is_mul + self.is_mem == 1
 
-    # TODO: do we actually need this function ???
-    def string_representation_after_register_rename(self, new_dest_register: Optional[int], rename_fn: Callable[[int], int]):
-        """
-        renames the instruction, respecting the register renaming.
-        The idea is to extract registers (starting at 'x') and pass them through rename
-        """
-        # should not have a new destination register if we didn't have one in the first place.
-        # similarely, we should have one if we had a destination register initially.
-        assert ((new_dest_register is None) ^ (self.dest_register is None)) == False
-
-        ans = self.string_representation
-        last_x_location = -1
-        is_first_iteration = True
-
-        while ans.find('x', last_x_location) != -1:
-            # still have a register to rename
-            last_x_location = ans.find('x', last_x_location)
-            st = last_x_location + 1
-            dr = st
-            while dr + 1 < len(ans) and ans[dr + 1].isnumeric():
-                dr += 1
-            reg = int(ans[st:dr+1])
-
-            if is_first_iteration and self.dest_register is not None:
-                # have to rename the destination register
-                assert reg == self.dest_register
-                ans = ans[:st] + str(new_dest_register) + ans[dr + 1:]
-            else:
-                assert reg in self.register_dependencies
-                ans = ans[:st] + str(rename_fn(reg)) + ans[dr+1:]
-
-            # no longer the first iteration
-            is_first_iteration = False
-
-        return ans
-
 
     def get_last_producer(self) -> Optional[int]:
         """
