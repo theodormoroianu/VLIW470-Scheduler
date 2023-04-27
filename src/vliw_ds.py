@@ -33,21 +33,21 @@ class VliwInstruction:
         It returns the associated execution unit on success and None on failure.
         It does NOT work for loops.
         """
-        vliw_instruction = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, idx)
+        vliw_instruction_unit = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, idx)
         if instruction.is_alu:
             if self.alu0 is not None:
-                self.alu0 = vliw_instruction
+                self.alu0 = vliw_instruction_unit
                 return "alu0"
             elif self.alu1 is not None:
-                self.alu1 = vliw_instruction
+                self.alu1 = vliw_instruction_unit
                 return "alu1"
 
         elif instruction.is_mul and self.mul is not None:
-            self.mul = vliw_instruction
+            self.mul = vliw_instruction_unit
             return "mul"
 
         elif instruction.is_mem and self.mem is not None:
-            self.mem = vliw_instruction
+            self.mem = vliw_instruction_unit
             return "mem"
         
         return False
@@ -87,6 +87,9 @@ class VliwProgram:
         self.program: list[VliwInstruction] = []
         self.risc_pos_to_vliw_pos: Dict[int, int] = {}
         self.unavailable_slots: Set[Tuple[int, str]] = set()
+        self.no_stages = 0
+        self.ii = 0
+        self.start_loop = 0
 
     def schedule_risc_instruction(
             self, 
@@ -191,7 +194,10 @@ class VliwProgram:
                                         risc_idx=None
                                         )
 
+        self.start_loop = loop_tag
 
+
+    # TODO: testing ... 100% it doesn't work
     def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram, ii: int) -> bool:
         """
         Schedules instructions in BB1 in the context of a RISC program for `loop_pip`.
@@ -220,13 +226,31 @@ class VliwProgram:
         while self.program[loop_tag].is_empty():
             loop_tag += 1
         
-        self.program[ii].branch = VliwInstructionUnit(
+        self.program[-1].branch = VliwInstructionUnit(
                                         dest_register=None, 
                                         string_representation=f"loop {loop_tag}",
                                         risc_idx=None
                                         )
 
+        loop_pip_size = len(self.program) - loop_tag
+        assert loop_pip_size % ii == 0
+        
+        self.no_stages = loop_pip_size // ii
+        self.ii = ii
+        self.start_loop = loop_tag
+
         return True
+    
+
+    def get_stage(self, instr_idx: int) -> int:
+        """
+        Returns the stage of an instruction inside BB1
+        """
+        assert self.start_loop <= instr_idx
+        result = (instr_idx - self.start_loop) // self.no_stages
+        assert result < self.ii
+        return result
+
 
     def dump(self):
         """

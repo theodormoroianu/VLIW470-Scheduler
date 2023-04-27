@@ -13,6 +13,8 @@ class RegisterDependency:
 
     The dependency category and the index of the producer instructions
     are to be determined after the program is parsed
+
+    For interloop dependencies with 2 producers, the first one is the one from BB1
     """
     def __init__(self, reg_tag: int):
         self.reg_tag = reg_tag
