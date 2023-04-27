@@ -105,11 +105,15 @@ class VliwProgram:
         If ii is not None it means we are scheduling for `loop.pip` and we should mark unavailable slots
         """
         # account for dependencies
+        # TEO TODO: is this correct?
+        #           if a producer is interloop, is this ok?
         last_dep = instruction.get_last_producer()
         if last_dep is None:
             offset = schedule_start_pos
         else:
+            assert last_dep in self.risc_pos_to_vliw_pos
             offset = max(self.risc_pos_to_vliw_pos[last_dep], schedule_start_pos)
+            # TEO TODO: This doesn't seem correct, because we add the latency even though we might come from schedule_start_pos
             offset += risc.program[last_dep].latency
         
         # find the first available slot
@@ -124,11 +128,11 @@ class VliwProgram:
                 if ii is not None:
                     bundle_pos = (idx - schedule_start_pos) // ii
                     if (bundle_pos, used_exec_unit) in self.unavailable_slots:
-                        continue
+                        continue # TEO TODO: we continue here, but try_to_set_instruction has already set the instruction, which should be canceled.
                     else:
                         self.unavailable_slots.add((bundle_pos, used_exec_unit))
                 
-                if idx >= len(self.program):
+                if idx >= len(self.program): # TEO TODO: Not sure what this is doing. if idx >= len(program), then self.program[id].try_... should fail.
                     self.program += [VliwInstruction()] * (len(self.program) - idx + 1)
 
                 self.risc_pos_to_vliw_pos[instr_idx] = idx 
@@ -144,7 +148,7 @@ class VliwProgram:
             start, stop = 0, risc.BB1_start
             schedule_start_pos = 0
         elif BB == "BB1":
-            start, stop = risc.BB1_start, risc.BB2_start - 1 
+            start, stop = risc.BB1_start, risc.BB2_start - 1 # TEO TODO: shouldn't it be risc.BB2_start?
             schedule_start_pos = len(self.program)
         else:
             start, stop = risc.BB2_start, len(risc.program)
@@ -163,7 +167,7 @@ class VliwProgram:
         ii = 1
         for dep in instruction.register_dependencies:
             if dep.is_interloop:
-                dep_idx = dep.producers_idx[0]
+                dep_idx = dep.producers_idx[0] # TEO TODO: If we have 2 producers, this will be the one from BB0, which is not always right.
                 dep_vliw_pos = self.risc_pos_to_vliw_pos[dep_idx]
                 dep_latency = risc.program[dep_idx].latency
                 instr_vliw_pos = self.risc_pos_to_vliw_pos[instr_idx + risc.BB1_start]
@@ -189,6 +193,7 @@ class VliwProgram:
         if ii <= len(self.program):
             self.program += [VliwInstruction()] * (len(self.program) - ii + 1)
 
+        # TEO TODO: Shouldn't it be self.program[-1]?
         self.program[ii].branch = VliwInstructionUnit(
                                         dest_register=None, 
                                         string_representation=f"loop {loop_tag}",

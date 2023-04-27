@@ -47,6 +47,7 @@ def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram
     result.schedule_loopless_instructions(risc, "BB0")
 
     ii = calculate_ii_lowerbound(risc)
+    # TEO TODO: Is this ok? Won't re-scheduling stuff break the object, which means we should make a copy each time?
     while not result.schedule_loop_pip_instructions(risc, ii):
         ii += 1
 
