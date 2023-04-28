@@ -192,7 +192,7 @@ class VliwProgram:
                 ii = max(ii, dep_vliw_pos + dep_latency - instr_vliw_pos)
         return ii
 
-    def schedule_loop_instructions(self, risc: risc_ds.RiscProgram):
+    def schedule_loop_instructions_without_interloop_dep(self, risc: risc_ds.RiscProgram):
         """
         Schedules instructions in BB1 in the context of a RISC program for `loop`
         """
@@ -206,13 +206,7 @@ class VliwProgram:
         self.start_loop = loop_tag 
 
         # determine where to put the loop so that the II is valid
-        ii = len(self.program) - loop_tag
-        for idx in range(risc.BB1_start, risc.BB2_start):
-            ii = max(ii, self._compute_min_ii_for_interloop_dep(risc, idx))
         
-        while len(self.program) < loop_tag + ii:
-            self.program += [VliwInstruction()]
-
         self.program[-1].branch = VliwInstructionUnit(
                                         dest_register=None, 
                                         string_representation=f"loop {loop_tag}",
@@ -220,6 +214,18 @@ class VliwProgram:
                                         )
 
         self.end_loop = len(self.program)
+
+    def fix_interloop_dependencies(self, risc: risc_ds.RiscProgram):
+        ii = self.end_loop - self.start_loop
+        for idx in range(risc.BB1_start, risc.BB2_start):
+            ii = max(ii, self._compute_min_ii_for_interloop_dep(risc, idx))
+        
+        while self.end_loop < self.start_loop + ii:
+            self.program = self.program[:self.end_loop] + [VliwInstruction()] \
+                            + self.program[self.end_loop:]
+            self.program[self.end_loop].branch = self.program[self.end_loop - 1].branch
+            self.program[self.end_loop - 1].branch = None
+            self.end_loop += 1
 
 
     def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram, ii: int) -> bool:

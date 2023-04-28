@@ -31,8 +31,9 @@ def generate_loop_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram:
     result.schedule_loopless_instructions(risc, "BB0")
 
     if risc.BB1_start != len(risc.program):    
-        result.schedule_loop_instructions(risc)
+        result.schedule_loop_instructions_without_interloop_dep(risc)
         result.schedule_loopless_instructions(risc, "BB2")    
+        result.fix_interloop_dependencies(risc)
     else:
         print("No loop instructions found for loop. Stopping.")
     
