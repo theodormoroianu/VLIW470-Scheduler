@@ -86,6 +86,7 @@ class VliwProgram:
         self.no_stages = 0
         self.ii = 0
         self.start_loop = 0
+        self.end_loop = 0
 
     def schedule_risc_instruction(
             self, 
@@ -205,8 +206,7 @@ class VliwProgram:
         while self.program[loop_tag].is_empty():
             loop_tag += 1
             
-        self.start_loop = loop_tag
-        
+        self.start_loop = loop_tag 
 
         # determine where to put the loop so that the II is valid
         ii = len(self.program) - loop_tag
@@ -221,6 +221,8 @@ class VliwProgram:
                                         string_representation=f"loop {loop_tag}",
                                         risc_idx=None
                                         )
+
+        self.end_loop = len(self.program)
 
 
     def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram, ii: int) -> bool:
@@ -266,6 +268,7 @@ class VliwProgram:
         self.no_stages = loop_pip_size // ii
         self.ii = ii
         self.start_loop = loop_tag
+        self.end_loop = len(self.program)
 
         return True
     

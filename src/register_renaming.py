@@ -10,7 +10,6 @@ class RegisterRename:
         self.risc = risc
         self.vliw = vliw
 
-        self.risc_to_vliw_registers = {}
         self.next_free_non_rotating_register = 1
         self.next_free_rotating_register = 32
 
@@ -27,13 +26,12 @@ class RegisterRename:
         assert(len(ans_list)) == 1
         return ans_list[0]
 
-    def rename_dest_registers(self, risc_start: int, risc_stop: int, is_roatating: bool = False):
+    def rename_dest_registers(self, vliw_start: int, vliw_stop: int, is_roatating: bool = False):
         """
         Renames the destination registers of the instructions in the VLIW program
-        Only takes into consideration instructions between (risc_start and risc_stop)
+        Only takes into consideration instructions between risc_start and risc_stop
         """
-        for instr_idx in range(risc_start, risc_stop):
-            bundle_idx = self.vliw.risc_pos_to_vliw_pos[instr_idx]
+        for bundle_idx in range(vliw_start, vliw_stop):
             bundle = self.vliw.program[bundle_idx]
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
                 if instruction is None or instruction.dest_register is None:
@@ -42,12 +40,9 @@ class RegisterRename:
                 new_dest_register = self.next_free_rotating_register if is_roatating \
                                     else self.next_free_non_rotating_register 
 
-                self.risc_to_vliw_registers[instruction.dest_register] = new_dest_register 
-                instruction.string_representation = \
-                    self.string_representation_after_register_rename(
-                        instruction,
-                        new_dest_register
-                        )
+                assert self.risc.program[instruction.risc_idx].renamed_dest_register is None
+                self.risc.program[instruction.risc_idx].renamed_dest_register = new_dest_register
+
                 if is_roatating:
                     self.next_free_rotating_register += self.vliw.no_stages + 1
                 else:
@@ -59,40 +54,62 @@ class RegisterRename:
         Performs register renaming for in the `loop` case (non-rotating registers)
         """
         # rename destination registers in the whole program
-        self.rename_dest_registers(0, len(self.risc.program)) 
+        self.rename_dest_registers(0, len(self.vliw.program)) 
 
         # rename register dependencies
-        final_adjustments = []
-        for instr_idx, risc_instr in enumerate(self.risc.program):
-            vliw_instr = self.get_vliw_instruction(instr_idx)
-            rename_dict = {}
+        final_movs = set()
 
-            for dep in risc_instr.register_dependencies:
-                producer_idx = self.vliw.risc_pos_to_vliw_pos[dep.producers_idx[0]]
-                new_register = self.vliw.program[producer_idx]
+        for bundle_idx, bundle in enumerate(self.vliw.program):
+            for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
+                rename_dict = {}
+                risc_instr = self.risc.program[instruction.risc_idx]
+                
+                for dep in risc_instr.register_dependencies:
+                    # if there are no dependencies allocate a new dummy register
+                    if dep.producers_idx == []:
+                        rename_dict[dep.reg_tag] = self.next_free_non_rotating_register
+                        self.next_free_non_rotating_register += 1
+                    else:
+                        new_register = self.risc.program[dep.producers_idx[-1]].renamed_dest_register 
+                        rename_dict[dep.reg_tag] = new_register
 
-                # account for interloop dependencies with a producer in BB0
-                if len(dep.producers_idx) == 2:
-                    final_adjustments.append(instr_idx, dep.reg_tag, dep.producers_idx[1])
+                        # account for interloop dependencies with a producer in BB0
+                        if len(dep.producers_idx) == 2:
+                            producer_bundle_idx = self.vliw.risc_pos_to_vliw_pos[dep.producers_idx[0]]
+                            earliest_slot = producer_bundle_idx + self.risc.program[dep.producers_idx[0]].latency
+                            earliest_slot = max(earliest_slot, self.vliw.end_loop - 1)
 
-                rename_dict[dep.reg_tag] = new_register
+                            renamed_BB0_reg = rename_dict[dep.reg_tag]
+                            renamed_BB1_reg = self.risc.program[dep.producers_idx[0]].renamed_dest_register 
 
-            # rename the instruction and keep the destination register unchanged
-            if len(rename_dict) > 0:
-                vliw_instr.string_representation = \
-                    self.string_representation_after_register_rename(
-                            vliw_instr,
-                            vliw_instr.dest_register,
-                            rename_dict
-                            )
+                            final_movs.add((earliest_slot, renamed_BB0_reg, renamed_BB1_reg))
+        
+                # rename the instruction
+                if len(rename_dict) > 0:
+                    instruction.string_representation = \
+                        self.string_representation_after_register_rename(
+                                instruction,
+                                risc_instr.renamed_dest_register,
+                                rename_dict
+                                )
 
-        # insert additional `mov` instructions in the end
-        # TODO: implement this:
-        # Idea: 
-        #   - do scheduling then renaming for each BB consecutively (or carefully insert movs in the right place)
-        #   - try inserting until we find a valid scheduling
-        for instr_idx, old_register, new_register in final_adjustments:
-            pass
+        moves_pos = self.vliw.end_loop
+        final_movs = list(final_movs)
+        final_movs.sort(key=lambda x : x[1]) # sort after BB0_reg
+
+        for earliest_slot, renamed_BB0_reg, renamed_BB1_reg in final_movs:
+            line = earliest_slot
+            while True:
+                while line >= self.vliw.end_loop:
+                    self.vliw.program = self.vliw.program[:self.vliw.end_loop] + [vliw_ds.VliwInstruction()] + \
+                                        self.vliw.program[self.vliw.end_loop:]
+
+                    self.vliw.program[self.vliw.end_loop].branch = self.vliw.program[self.vliw.end_loop - 1]
+                    self.vliw.program[self.vliw.end_loop - 1] = None
+                    self.vliw.end_loop += 1
+
+                if self.vliw.program[line].alu0 is None:
+                    self.vliw.program[line].alu0 = vliw_ds.
 
 
     def rename_loop_pip(self):

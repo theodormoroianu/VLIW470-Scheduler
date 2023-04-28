@@ -78,6 +78,7 @@ class RiscInstruction:
             string_representation: str
             ):
         self.dest_register = dest_register
+        self.renamed_dest_register = None
         self.register_dependencies = register_dependencies
         self.is_alu = is_alu
         self.is_mul = is_mul
