@@ -141,7 +141,7 @@ class VliwProgram:
                     assert self.program[schedule_start_pos].mul is None 
                     self.program[schedule_start_pos].mul = vliw_instruction_unit
                 case _:
-                    raise "Nono"
+                    raise Exception("Nono")
 
             if ii is not None:
                 bundle_ii_position = (schedule_start_pos - loop_start) % ii
