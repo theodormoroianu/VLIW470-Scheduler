@@ -10,7 +10,7 @@ import scheduler
 
 def main():
     if False:
-        INPUT_FILE = "test/02/input.json" # sys.argv[1]
+        INPUT_FILE = "test/11/input.json" # sys.argv[1]
         OUTPUT_SIMPLE_FILE = "loop.json" # sys.argv[2]
         OUTPUT_PIP_FILE = "loop_pip.json" # sys.argv[3]
     else:

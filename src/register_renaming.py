@@ -106,7 +106,7 @@ class RegisterRename:
                                         self.vliw.program[self.vliw.end_loop:]
 
                     self.vliw.program[self.vliw.end_loop].branch = self.vliw.program[self.vliw.end_loop - 1]
-                    self.vliw.program[self.vliw.end_loop - 1] = None
+                    self.vliw.program[self.vliw.end_loop - 1].branch = None
                     self.vliw.end_loop += 1
 
                 if self.vliw.program[line].alu0 is None:
@@ -224,6 +224,11 @@ class RegisterRename:
             last_x_location = ans.find('x', last_x_location + 1)
             start = last_x_location + 1
             stop = start
+
+            if ans[start - 2] == '0':
+                # Retarded case with 0x
+                continue
+
             while stop + 1 < len(ans) and ans[stop + 1].isnumeric():
                 stop += 1
             reg = int(ans[start:stop+1])
