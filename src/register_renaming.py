@@ -59,7 +59,7 @@ class RegisterRename:
         # rename register dependencies
         final_movs = set()
 
-        for bundle_idx, bundle in enumerate(self.vliw.program):
+        for bundle in self.vliw.program:
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 rename_dict = {}
                 if instruction is None:
@@ -105,7 +105,8 @@ class RegisterRename:
                     self.vliw.program = self.vliw.program[:self.vliw.end_loop] + [vliw_ds.VliwInstruction()] + \
                                         self.vliw.program[self.vliw.end_loop:]
 
-                    self.vliw.program[self.vliw.end_loop].branch = self.vliw.program[self.vliw.end_loop - 1]
+                    self.vliw.program[self.vliw.end_loop].branch =  \
+                            self.vliw.program[self.vliw.end_loop - 1].branch
                     self.vliw.program[self.vliw.end_loop - 1].branch = None
                     self.vliw.end_loop += 1
 
