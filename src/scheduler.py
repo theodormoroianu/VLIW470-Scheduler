@@ -1,6 +1,7 @@
 import risc_ds
 import vliw_ds
 from typing import Optional
+import register_renaming
 
 def calculate_ii_lowerbound(risc: risc_ds.RiscProgram) -> int:
     """
@@ -36,7 +37,8 @@ def generate_loop_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram:
         print("No loop instructions found for loop. Stopping.")
     
     # do register renaming
-    # TODO: implementation
+    renamer = register_renaming.RegisterRename(risc, result)
+    renamer.rename_loop()
     
     return result
     

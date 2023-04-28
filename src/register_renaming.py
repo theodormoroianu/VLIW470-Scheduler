@@ -34,7 +34,7 @@ class RegisterRename:
         for bundle_idx in range(vliw_start, vliw_stop):
             bundle = self.vliw.program[bundle_idx]
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
-                if instruction is None or instruction.dest_register is None:
+                if instruction is None or instruction.dest_register is None or instruction.dest_register == -1:
                     continue 
                
                 new_dest_register = self.next_free_rotating_register if is_roatating \
@@ -60,8 +60,10 @@ class RegisterRename:
         final_movs = set()
 
         for bundle_idx, bundle in enumerate(self.vliw.program):
-            for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
+            for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 rename_dict = {}
+                if instruction is None:
+                    continue
                 risc_instr = self.risc.program[instruction.risc_idx]
                 
                 for dep in risc_instr.register_dependencies:
@@ -85,15 +87,14 @@ class RegisterRename:
                             final_movs.add((earliest_slot, renamed_BB0_reg, renamed_BB1_reg))
         
                 # rename the instruction
-                if len(rename_dict) > 0:
-                    instruction.string_representation = \
-                        self.string_representation_after_register_rename(
-                                instruction,
-                                risc_instr.renamed_dest_register,
-                                rename_dict
-                                )
+                # if len(rename_dict) > 0:
+                instruction.string_representation = \
+                    self.string_representation_after_register_rename(
+                            instruction,
+                            risc_instr.renamed_dest_register,
+                            rename_dict
+                            )
 
-        moves_pos = self.vliw.end_loop
         final_movs = list(final_movs)
         final_movs.sort(key=lambda x : x[1]) # sort after BB0_reg
 
@@ -109,7 +110,19 @@ class RegisterRename:
                     self.vliw.end_loop += 1
 
                 if self.vliw.program[line].alu0 is None:
-                    self.vliw.program[line].alu0 = vliw_ds.
+                    self.vliw.program[line].alu0 = vliw_ds.VliwInstructionUnit(
+                        -1,
+                        f"mov {renamed_BB0_reg}, {renamed_BB1_reg}",
+                        -1
+                    )
+                    break
+                if self.vliw.program[line].alu1 is None:
+                    self.vliw.program[line].alu1 = vliw_ds.VliwInstructionUnit(
+                        -1,
+                        f"mov {renamed_BB0_reg}, {renamed_BB1_reg}",
+                        -1
+                    )
+                    break
 
 
     def rename_loop_pip(self):
@@ -194,33 +207,35 @@ class RegisterRename:
         """
         # should not have a new destination register if we didn't have one in the first place.
         # similarely, we should have one if we had a destination register initially.
-        assert ((new_dest_register is None) ^ (instruction.dest_register is None)) == False
+        if instruction.dest_register == -1:
+            assert new_dest_register is None
+        else:
+            assert ((new_dest_register is None) ^ (instruction.dest_register is None)) == False
        
         if rename_dict is None:
             rename_dict = {}
 
         ans = instruction.string_representation
-        last_x_location = -1
+        last_x_location = 0
         is_first_iteration = True
 
-        while ans.find('x', last_x_location) != -1:
+        while ans.find('x', last_x_location + 1) != -1:
             # still have a register to rename
-            last_x_location = ans.find('x', last_x_location)
+            last_x_location = ans.find('x', last_x_location + 1)
             start = last_x_location + 1
             stop = start
             while stop + 1 < len(ans) and ans[stop + 1].isnumeric():
                 stop += 1
             reg = int(ans[start:stop+1])
 
-            if is_first_iteration and instruction.dest_registarter is not None:
+            if is_first_iteration and instruction.dest_register is not None:
                 # have to rename the destination registarter
-                assert reg == instruction.dest_registarter
+                assert reg == instruction.dest_register
                 ans = ans[:start] + str(new_dest_register) + ans[stop + 1:]
             else:
-                dependencies = [d.reg_tag for d in \
-                        self.risc[instruction.risc_idx].register_dependencies]
-                assert reg in dependencies
-                ans = ans[:start] + str(rename_dict.get(reg, default=reg)) + ans[stop+1:]
+                # print(f"Reg: {reg}, rename_dict: {rename_dict}, dest_register: {instruction.dest_register}")
+                assert reg in rename_dict
+                ans = ans[:start] + str(rename_dict[reg]) + ans[stop+1:]
 
             # no longer the firstart iteration
             is_first_iteration = False
