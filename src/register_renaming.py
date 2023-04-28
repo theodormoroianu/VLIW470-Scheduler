@@ -130,10 +130,11 @@ class RegisterRename:
             rename_dict = {}
             
             for dep in risc_instr.register_dependencies:
+                producer_idx = dep.producers_idx[0]
+                producer = self.get_vliw_instruction(producer_idx)
+                
                 if dep.is_loop_invariant:
                     producer_rename_dict = {}
-                    producer_idx = dep.producers_idx[0]
-                    producer = self.get_vliw_instruction(producer_idx)
                     producer_rename_dict[producer.dest_registers] = risc_instr.dest_registers 
                     producer.string_representation = \
                         self.string_representation_after_register_rename(
@@ -141,13 +142,30 @@ class RegisterRename:
                                 producer.dest_register,
                                 producer_rename_dict
                                 )
+                else:
+                    # TODO: not sure about this
+                    assert dep.is_local or dep.is_interloop
+                    producer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos(producer_idx))
+                    consumer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos(instr_idx))
+                    new_register = producer.dest_register + (consumer_stage - producer_stage)
 
-                elif dep.is_local:
-                    pass
-                   
-                elif dep.is_interloop:
-                    pass
-        
+                    if dep.is_interloop:
+                        new_register += 1
+
+                    
+                    # rename the instruction and keep the destination register unchanged
+                    rename_dict = {dep.reg_tag: new_register}
+                    vliw_instr.string_representation = \
+                        self.string_representation_after_register_rename(
+                                vliw_instr,
+                                vliw_instr.dest_register,
+                                rename_dict
+                                )
+
+        # TODO
+        # rename destination registers in BB0 and BB1
+
+    
 
     def string_representation_after_register_rename(self, 
             instruction: vliw_ds.VliwInstructionUnit,

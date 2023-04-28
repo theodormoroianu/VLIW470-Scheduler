@@ -36,10 +36,11 @@ class VliwInstruction:
         vliw_instruction_unit = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, idx)
         if instruction.is_alu:
             # TEO TODO: I think it should be None instead of not None.
-            if self.alu0 is not None:
+            # Tifui TODO: Yes
+            if self.alu0 is None:
                 self.alu0 = vliw_instruction_unit
                 return "alu0"
-            elif self.alu1 is not None:
+            elif self.alu1 is None:
                 self.alu1 = vliw_instruction_unit
                 return "alu1"
 
@@ -248,12 +249,12 @@ class VliwProgram:
         return True
     
 
-    def get_stage(self, instr_idx: int) -> int:
+    def get_stage(self, vliw_instr_idx: int) -> int:
         """
         Returns the stage of an instruction inside BB1
         """
-        assert self.start_loop <= instr_idx
-        result = (instr_idx - self.start_loop) // self.no_stages
+        assert self.start_loop <= vliw_instr_idx
+        result = (vliw_instr_idx - self.start_loop) // self.no_stages
         assert result < self.ii
         return result
 
