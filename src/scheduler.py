@@ -64,6 +64,7 @@ def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram
 
         result.schedule_loopless_instructions(risc, "BB2")
     else:
+        result.start_loop = result.end_loop = len(result.program)
         print("No loop instructions found for loop. Stopping.")
 
     # do register renaming

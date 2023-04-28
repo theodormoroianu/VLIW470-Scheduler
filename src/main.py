@@ -9,8 +9,8 @@ import vliw_ds
 import scheduler
 
 def main():
-    if False:
-        INPUT_FILE = "test/04/input.json" # sys.argv[1]
+    if True:
+        INPUT_FILE = "test/01/input.json" # sys.argv[1]
         OUTPUT_SIMPLE_FILE = "loop.json" # sys.argv[2]
         OUTPUT_PIP_FILE = "loop_pip.json" # sys.argv[3]
     else:
