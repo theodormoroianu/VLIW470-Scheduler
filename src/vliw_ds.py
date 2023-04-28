@@ -285,6 +285,46 @@ class VliwProgram:
         assert result < self.no_stages
         return result
 
+    
+    def compress_loop_body(self):
+        """
+        Compresses the loop body in case of loop.pip. Only called in the end
+        """
+        prologue_0 = "mov p32, true"
+        prologue_1 = f"mov EC {self.no_stages - 1}"
+        prologue_bundle = VliwInstruction()
+        prologue_bundle.alu0 = VliwInstructionUnit(None, prologue_1, -1)
+        prologue_bundle.alu1 = VliwInstructionUnit(None, prologue_1, None)
+
+
+        compressed_loop = [VliwInstruction()] * self.no_stages
+        for idx, bundle in list(enumerate(self.program))[self.start_loop:self.end_loop]:
+            predicate = f"(p{32 + self.get_stage(idx)}) "
+            bundle_pos = idx % self.ii
+            
+            for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
+                if instruction is None:
+                    continue
+                instruction.string_representation = predicate + instruction.string_representation
+               
+            if bundle.alu0 is not None:
+                assert self.program[bundle_pos].alu0 is None
+                self.program[bundle_pos].alu0 = bundle.alu0
+                
+            if bundle.alu1 is not None:
+                assert self.program[bundle_pos].alu1 is None
+                self.program[bundle_pos].alu1 = bundle.alu1
+
+            if bundle.mul is not None:
+                assert self.program[bundle_pos].mul is None
+                self.program[bundle_pos].mul = bundle.mul
+
+            if bundle.mem is not None:
+                assert self.program[bundle_pos].mem is None
+                self.program[bundle_pos].mem = bundle.mem
+
+        self.program = self.program[:self.start_loop] + compressed_loop + self.program[self.end_loop:]
+
 
     def dump(self):
         """

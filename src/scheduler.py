@@ -67,6 +67,10 @@ def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram
         print("No loop instructions found for loop. Stopping.")
 
     # do register renaming
-    # TODO: implementation
+    renamer = register_renaming.RegisterRename(risc, result)
+    renamer.rename_loop_pip()
     
+    # compress loop body
+    result.compress_loop_body()
+
     return result
