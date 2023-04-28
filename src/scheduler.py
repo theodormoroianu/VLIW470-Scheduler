@@ -28,8 +28,12 @@ def generate_loop_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram:
     
     # schedule instructions
     result.schedule_loopless_instructions(risc, "BB0")
-    result.schedule_loop_instructions(risc)
-    result.schedule_loopless_instructions(risc, "BB2")
+
+    if risc.BB1_start != len(risc.program):    
+        result.schedule_loop_instructions(risc)
+        result.schedule_loopless_instructions(risc, "BB2")    
+    else:
+        print("No loop instructions found for loop. Stopping.")
     
     # do register renaming
     # TODO: implementation
@@ -46,13 +50,19 @@ def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram
     # schedule instructions
     result.schedule_loopless_instructions(risc, "BB0")
 
-    ii = calculate_ii_lowerbound(risc)
-    # TEO TODO: Is this ok? Won't re-scheduling stuff break the object, which means we should make a copy each time?
-    while not result.schedule_loop_pip_instructions(risc, ii):
-        ii += 1
 
-    result.schedule_loopless_instructions(risc, "BB2")
-    
+    if risc.BB1_start != len(risc.program):
+        ii = calculate_ii_lowerbound(risc)
+        # TEO TODO: Is this ok? Won't re-scheduling stuff break the object, which means we should make a copy each time?
+        while not result.schedule_loop_pip_instructions(risc, ii):
+            ii += 1
+
+        print(f"Pipelined with an II of {ii}.")
+
+        result.schedule_loopless_instructions(risc, "BB2")
+    else:
+        print("No loop instructions found for loop. Stopping.")
+
     # do register renaming
     # TODO: implementation
     

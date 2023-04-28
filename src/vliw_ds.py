@@ -27,7 +27,7 @@ class VliwInstruction:
         self.mem: Optional[VliwInstructionUnit] = None
         self.branch: Optional[VliwInstructionUnit] = None
 
-    def get_available_bundle_slots(self, instruction: risc_ds.RiscInstruction, idx: Optional[int]) -> list[str]:
+    def get_available_bundle_slots(self, instruction: risc_ds.RiscInstruction) -> list[str]:
         """
         Tries to update the corresponding unit.
         It returns the associated execution unit on success and None on failure.
@@ -37,16 +37,16 @@ class VliwInstruction:
         if instruction.is_alu:
             if self.alu0 is None:
                 ans.append("alu0")
-            elif self.alu1 is None:
+            if self.alu1 is None:
                 ans.append("alu1")
 
-        elif instruction.is_mul and self.mul is not None:
+        elif instruction.is_mul and self.mul is None:
                 ans.append("mul")
 
-        elif instruction.is_mem and self.mem is not None:
+        elif instruction.is_mem and self.mem is None:
                 ans.append("mem")
         
-        return False
+        return ans
 
     
     def is_empty(self) -> bool:
@@ -105,6 +105,11 @@ class VliwProgram:
         for dep in instruction.register_dependencies:
             if dep.is_interloop:
                 continue
+            if not dep.is_interloop and not dep.is_local and not dep.is_loop_invariant and not dep.is_post_loop:
+                # not set
+                assert dep.producers_idx == []
+                continue
+
             assert len(dep.producers_idx) == 1
             start_after_for_dep = self.risc_pos_to_vliw_pos[dep.producers_idx[0]] + risc.program[dep.producers_idx[0]].latency
             schedule_start_pos = max(schedule_start_pos, start_after_for_dep)
@@ -114,7 +119,7 @@ class VliwProgram:
             while len(self.program) <= schedule_start_pos:
                 self.program += [VliwInstruction()]
 
-            possible_units = self.program[schedule_start_pos].get_available_bundle_slots(instruction, instr_idx, ii)
+            possible_units = self.program[schedule_start_pos].get_available_bundle_slots(instruction)
             
             if ii is not None:
                 bundle_ii_position = (schedule_start_pos - loop_start) % ii
@@ -159,7 +164,7 @@ class VliwProgram:
             start, stop = 0, risc.BB1_start
             schedule_start_pos = 0
         elif BB == "BB1":
-            start, stop = risc.BB1_start, risc.BB2_start - 1 # ignore loop instruction
+            start, stop = risc.BB1_start, risc.BB2_start
             schedule_start_pos = len(self.program)
         else:
             start, stop = risc.BB2_start, len(risc.program)
@@ -226,17 +231,17 @@ class VliwProgram:
         loop_tag = len(self.program)
         schedule_start_pos = len(self.program)
 
-        # -1 because we ignore loop instruction
-        for idx in range(risc.BB1_start, risc.BB2_start - 1):
+        for idx in range(risc.BB1_start, risc.BB2_start):
             instruction = risc.program[idx]
             self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos, ii)
 
+        for idx in range(risc.BB1_start, risc.BB2_start):
             # check if the II is large enough
             if self._compute_min_ii_for_interloop_dep(risc, idx) > ii:
                 # restore the state of `self`(undo the scheduling)
                 self.unavailable_slots = set()
                 self.program = self.program[:schedule_start_pos]
-                to_erase = [k for (k, v) in self.program.risc_pos_to_vliw_pos.items() \
+                to_erase = [k for (k, v) in self.risc_pos_to_vliw_pos.items() \
                             if v >= schedule_start_pos]
                 for k in to_erase:
                     self.risc_pos_to_vliw_pos.pop(k)
@@ -250,7 +255,7 @@ class VliwProgram:
         loop_pip_size = len(self.program) - loop_tag
         while loop_pip_size % ii != 0:
             self.program += [VliwInstruction()]
-            loop_pip_size = len(self.program - loop_tag)
+            loop_pip_size = len(self.program) - loop_tag
         
         self.program[-1].branch = VliwInstructionUnit(
                                         dest_register=None, 

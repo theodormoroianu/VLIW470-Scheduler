@@ -146,9 +146,10 @@ class RiscProgram:
                     addr = addr[addr.find('(') + 1:addr.find(')')]
                     is_mem = True
                     if content[0] == "ld":
-                        dest_register = addr
-                    elif content[0] == "st":
+                        dest_register = content[1]
                         register_dependencies = [addr]
+                    elif content[0] == "st":
+                        register_dependencies = [content[1], addr]
                     else:
                         assert False
                 case "mov":
@@ -178,7 +179,7 @@ class RiscProgram:
             if dest_register is not None:
                 dest_register = int(dest_register)
             register_dependencies = [
-                 RegisterDependency(i) for i in register_dependencies
+                 RegisterDependency(int(i)) for i in register_dependencies
             ]
 
             ans.append(RiscInstruction(
@@ -204,6 +205,7 @@ class RiscProgram:
             stop_BB = -1
 
         for prod_idx in range(instr_idx - 1, stop_BB, -1):
+            assert type(dep.reg_tag) == int
             if self.program[prod_idx].dest_register == dep.reg_tag:
                 return prod_idx
         return None
@@ -216,7 +218,8 @@ class RiscProgram:
         """
         result = []
         # first search inside BB1
-        for prod_idx in range(self.BB2_start - 1, instr_idx, -1):
+        # idx - 1 because we consider the instruction itself
+        for prod_idx in range(self.BB2_start - 1, instr_idx - 1, -1):
             if self.program[prod_idx].dest_register == dep.reg_tag:
                 result.append(prod_idx)
                 break
@@ -260,7 +263,7 @@ class RiscProgram:
                 dep.set_dep_type("local", prod_idx)
 
         # find dependecies for instructions in BB1
-        for idx, instruction in enumerate(self.program[self.BB1_start:self.BB2_start]):
+        for idx, instruction in list(enumerate(self.program))[self.BB1_start:self.BB2_start]:
             for dep in instruction.register_dependencies:
                 prod_idx = self._find_local_dependency(idx, dep)
                 if prod_idx is not None:
@@ -272,10 +275,9 @@ class RiscProgram:
                     else:
                         prod_idx = self._find_loop_invariant_dependency(dep)
                         dep.set_dep_type("loop_invariant", prod_idx)
-                        assert prod_idx is not None
 
         # find dependecies for instructions in BB2
-        for idx, instruction in enumerate(self.program[self.BB2_start:]):
+        for idx, instruction in list(enumerate(self.program))[self.BB2_start:]:
             for dep in instruction.register_dependencies:
                 prod_idx = self._find_local_dependency(idx, dep)
                 if prod_idx is not None:
@@ -287,7 +289,6 @@ class RiscProgram:
                     else:
                         prod_idx = self._find_loop_invariant_dependency(dep)
                         dep.set_dep_type("loop_invariant", prod_idx)
-                        assert prod_idx is not None
 
 
     @staticmethod
