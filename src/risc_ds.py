@@ -1,4 +1,4 @@
-rom typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 class RegisterDependency:
     """
@@ -28,6 +28,7 @@ class RegisterDependency:
         if producer_idx is None:
             return
 
+        assert self.producers_idx == []
         assert dep_type in {"local", "interloop", "loop_invariant", "post_loop"}
         match dep_type:
             case "local":
@@ -39,7 +40,6 @@ class RegisterDependency:
             case "post_loop":
                 self.is_post_loop = True
 
-        # TEO TODO: Check this is ok now.
         if type(producer_idx) == list:
             self.producers_idx += producer_idx
         else:
@@ -94,20 +94,6 @@ class RiscInstruction:
 
         # sanity check
         assert self.is_alu + self.is_mul + self.is_mem == 1
-
-
-    def get_last_producer(self) -> Optional[int]:
-        """
-        Returns the index of the last producer instruction in program order.
-        """
-        # TEO TODO: If we are in the loop body, and have A B C, where A and C are producers of B. Then A should be the last one right?
-        result = -1
-        for dep in self.register_dependencies:
-            result = max(result, dep.producers_idx)
-
-        if result == -1:
-            result = None
-        return result
 
 
 class RiscProgram:

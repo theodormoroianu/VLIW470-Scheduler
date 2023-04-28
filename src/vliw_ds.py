@@ -27,30 +27,24 @@ class VliwInstruction:
         self.mem: Optional[VliwInstructionUnit] = None
         self.branch: Optional[VliwInstructionUnit] = None
 
-    def try_to_set_instruction(self, instruction: risc_ds.RiscInstruction, idx: Optional[int]) -> Optional[str]:
+    def get_available_bundle_slots(self, instruction: risc_ds.RiscInstruction, idx: Optional[int]) -> list[str]:
         """
         Tries to update the corresponding unit.
         It returns the associated execution unit on success and None on failure.
         It does NOT work for loops.
         """
-        vliw_instruction_unit = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, idx)
+        ans = []
         if instruction.is_alu:
-            # TEO TODO: I think it should be None instead of not None.
-            # Tifui TODO: Yes
             if self.alu0 is None:
-                self.alu0 = vliw_instruction_unit
-                return "alu0"
+                ans.append("alu0")
             elif self.alu1 is None:
-                self.alu1 = vliw_instruction_unit
-                return "alu1"
+                ans.append("alu1")
 
         elif instruction.is_mul and self.mul is not None:
-            self.mul = vliw_instruction_unit
-            return "mul"
+                ans.append("mul")
 
         elif instruction.is_mem and self.mem is not None:
-            self.mem = vliw_instruction_unit
-            return "mem"
+                ans.append("mem")
         
         return False
 
@@ -105,40 +99,56 @@ class VliwProgram:
         Finds the earliest cycle an instruction can be scheduled at in the context of a RISC program
         If ii is not None it means we are scheduling for `loop.pip` and we should mark unavailable slots
         """
-        # account for dependencies
-        # TEO TODO: is this correct?
-        #           if a producer is interloop, is this ok?
-        last_dep = instruction.get_last_producer()
-        if last_dep is None:
-            offset = schedule_start_pos
-        else:
-            assert last_dep in self.risc_pos_to_vliw_pos
-            offset = max(self.risc_pos_to_vliw_pos[last_dep], schedule_start_pos)
-            # TEO TODO: This doesn't seem correct, because we add the latency even though we might come from schedule_start_pos
-            offset += risc.program[last_dep].latency
-        
-        # find the first available slot
-        # it has to find a slot eventually
-        idx = offset - 1
+        # only used if ii != None
+        loop_start = schedule_start_pos
+
+        for dep in instruction.register_dependencies:
+            if dep.is_interloop:
+                continue
+            assert len(dep.producers_idx) == 1
+            start_after_for_dep = self.risc_pos_to_vliw_pos[dep.producers_idx[0]] + risc.program[dep.producers_idx[0]].latency
+            schedule_start_pos = max(schedule_start_pos, start_after_for_dep)
+
         while True:
-            idx += 1
+            # try to schedule at schedule_start_pos
+            while len(self.program) <= schedule_start_pos:
+                self.program += [VliwInstruction()]
 
-            used_exec_unit = self.program[idx].try_to_set_instruction(instruction, instr_idx, ii)
-            if used_exec_unit is not None:
-                # will only be executed in case of `loop.pip`
-                if ii is not None:
-                    bundle_pos = (idx - schedule_start_pos) // ii
-                    if (bundle_pos, used_exec_unit) in self.unavailable_slots:
-                        continue # TEO TODO: we continue here, but try_to_set_instruction has already set the instruction, which should be canceled.
-                    else:
-                        self.unavailable_slots.add((bundle_pos, used_exec_unit))
-                
-                if idx >= len(self.program): # TEO TODO: Not sure what this is doing. if idx >= len(program), then self.program[id].try_... should fail.
-                    self.program += [VliwInstruction()] * (len(self.program) - idx + 1)
+            possible_units = self.program[schedule_start_pos].get_available_bundle_slots(instruction, instr_idx, ii)
+            
+            if ii is not None:
+                bundle_ii_position = (schedule_start_pos - loop_start) % ii
+                possible_units = [i for i in possible_units if (bundle_ii_position, i) not in self.unavailable_slots]
+            
+            if possible_units == []:
+                schedule_start_pos += 1
+                continue
 
-                self.risc_pos_to_vliw_pos[instr_idx] = idx 
-                break
+            # schedule to first available unit
+            schedule_unit = possible_units[0]
+            vliw_instruction_unit = VliwInstructionUnit(instruction.dest_register, instruction.string_representation, instr_idx)
+            match schedule_unit:
+                case "alu0":
+                    assert self.program[schedule_start_pos].alu0 is None 
+                    self.program[schedule_start_pos].alu0 = vliw_instruction_unit
+                case "alu1":
+                    assert self.program[schedule_start_pos].alu1 is None 
+                    self.program[schedule_start_pos].alu1 = vliw_instruction_unit
+                case "mem":
+                    assert self.program[schedule_start_pos].mem is None 
+                    self.program[schedule_start_pos].mem = vliw_instruction_unit
+                case "mul":
+                    assert self.program[schedule_start_pos].mul is None 
+                    self.program[schedule_start_pos].mul = vliw_instruction_unit
+                case _:
+                    raise "Nono"
 
+            if ii is not None:
+                bundle_ii_position = (schedule_start_pos - loop_start) % ii
+                self.unavailable_slots.add((bundle_ii_position, schedule_unit))
+
+            self.risc_pos_to_vliw_pos[instr_idx] = schedule_start_pos
+            return
 
     def schedule_loopless_instructions(self, risc: risc_ds.RiscProgram, BB: str, ii: Optional[int] = None):
         """
@@ -149,7 +159,7 @@ class VliwProgram:
             start, stop = 0, risc.BB1_start
             schedule_start_pos = 0
         elif BB == "BB1":
-            start, stop = risc.BB1_start, risc.BB2_start - 1 # TEO TODO: shouldn't it be risc.BB2_start?
+            start, stop = risc.BB1_start, risc.BB2_start - 1 # ignore loop instruction
             schedule_start_pos = len(self.program)
         else:
             start, stop = risc.BB2_start, len(risc.program)
@@ -185,6 +195,9 @@ class VliwProgram:
         # ignore any empty bundles
         while self.program[loop_tag].is_empty():
             loop_tag += 1
+            
+        self.start_loop = loop_tag
+        
 
         # determine where to put the loop so that the II is valid
         ii = 1
@@ -201,7 +214,6 @@ class VliwProgram:
                                         risc_idx=None
                                         )
 
-        self.start_loop = loop_tag
 
 
     # TODO: testing ... 100% it doesn't work
