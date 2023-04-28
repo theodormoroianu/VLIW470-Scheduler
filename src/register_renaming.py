@@ -198,6 +198,9 @@ class RegisterRename:
                     # interloop dep, have to assign same register as the interloop one
                     risc_instr.renamed_dest_register = \
                         self.risc.program[other_interloop_producer_risc_idx].renamed_dest_register
+
+                    stage_other_producer = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos[dep.producers_idx[0]])
+                    risc_instr.renamed_dest_register += (1 - stage_other_producer)
                     # TODO Tifui: compute offset to add to register
                 
         

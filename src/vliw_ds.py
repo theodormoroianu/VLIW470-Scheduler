@@ -293,19 +293,43 @@ class VliwProgram:
         if risc.BB1_start == risc.BB2_start:
             return
 
-        prologue_0 = "mov p32, true"
-        prologue_1 = f"mov EC {self.no_stages - 1}"
-        prologue_bundle = VliwInstruction()
-        prologue_bundle.alu0 = VliwInstructionUnit(None, prologue_0, -1)
-        prologue_bundle.alu1 = VliwInstructionUnit(None, prologue_1, None)
+        
 
-        # TODO: add bundle before
+        prologue_0 = "mov p32, true"
+        prologue_1 = f"mov EC, {self.no_stages - 1}"
+        prologue_bundle = VliwInstruction()
+        prologue_bundle.alu1 = VliwInstructionUnit(None, prologue_0, -1)
+        prologue_bundle.alu0 = VliwInstructionUnit(None, prologue_1, None)
+
+        nr_matched = 0
+        to_match = [prologue_bundle.alu0, prologue_bundle.alu1]
+        if self.start_loop > 0:
+            bundle = self.program[self.start_loop - 1]
+            if bundle.alu0 is None:
+               bundle.alu0 = to_match[0]
+               nr_matched += 1
+            if bundle.alu1 is None:
+               bundle.alu1 = to_match[nr_matched]
+               nr_matched += 1
+                    
+        if nr_matched == 1:
+            prologue_bundle.alu0 = prologue_bundle.alu1
+            prologue_bundle.alu1 = None
+        
+        if nr_matched != 2:
+            self.program = self.program[:self.start_loop] + [prologue_bundle] + \
+                            self.program[self.start_loop:]
+            self.start_loop += 1
+            self.end_loop += 1
+            self.program[self.end_loop - 1].branch.string_representation = \
+                    f"loop.pip {self.start_loop}"
+
         compressed_loop = [VliwInstruction() for _ in range(self.ii)]
         for idx, bundle in enumerate(self.program[self.start_loop:self.end_loop]):
             predicate = f"(p{32 + self.get_stage(idx + self.start_loop)}) "
             bundle_pos = idx % self.ii
             
-            for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
+            for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 if instruction is None:
                     continue
                 instruction.string_representation = predicate + instruction.string_representation
