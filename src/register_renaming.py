@@ -113,14 +113,14 @@ class RegisterRename:
                 if self.vliw.program[line].alu0 is None:
                     self.vliw.program[line].alu0 = vliw_ds.VliwInstructionUnit(
                         -1,
-                        f"mov {renamed_BB0_reg}, {renamed_BB1_reg}",
+                        f"mov x{renamed_BB0_reg}, x{renamed_BB1_reg}",
                         -1
                     )
                     break
                 if self.vliw.program[line].alu1 is None:
                     self.vliw.program[line].alu1 = vliw_ds.VliwInstructionUnit(
                         -1,
-                        f"mov {renamed_BB0_reg}, {renamed_BB1_reg}",
+                        f"mov x{renamed_BB0_reg}, x{renamed_BB1_reg}",
                         -1
                     )
                     break
@@ -226,12 +226,14 @@ class RegisterRename:
             start = last_x_location + 1
             stop = start
 
-            if ans[start - 2] == '0':
-                # Retarded case with 0x
-                continue
-
             while stop + 1 < len(ans) and ans[stop + 1].isnumeric():
                 stop += 1
+
+            if ans[start - 2] == '0':
+                # Retarded case with 0x
+                ans = ans[:start - 2] + str(int(ans[start:stop+1], 16)) + ans[stop+1:]
+                continue
+
             reg = int(ans[start:stop+1])
 
             if is_first_iteration and instruction.dest_register is not None:

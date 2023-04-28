@@ -104,15 +104,12 @@ class VliwProgram:
         loop_start = schedule_start_pos
 
         for dep in instruction.register_dependencies:
-            if dep.is_interloop:
-                continue
             if not dep.is_interloop and not dep.is_local and not dep.is_loop_invariant and not dep.is_post_loop:
                 # not set
                 assert dep.producers_idx == []
                 continue
 
-            assert len(dep.producers_idx) == 1
-            start_after_for_dep = self.risc_pos_to_vliw_pos[dep.producers_idx[0]] + risc.program[dep.producers_idx[0]].latency
+            start_after_for_dep = self.risc_pos_to_vliw_pos[dep.producers_idx[-1]] + risc.program[dep.producers_idx[-1]].latency
             schedule_start_pos = max(schedule_start_pos, start_after_for_dep)
 
         while True:
