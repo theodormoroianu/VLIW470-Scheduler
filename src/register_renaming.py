@@ -135,49 +135,33 @@ class RegisterRename:
         self.rename_dest_registers(self.vliw.start_loop, self.vliw.end_loop, True)
 
         # allocate non-rotating registers for loop invariant dependencies
-        for bundle in self.vliw.program[self.vliw.start_loop:self.vliw.end_loop]:
+        for bundle in self.vliw.program[:self.vliw.start_loop]:
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 # ignore empty instructions
                 if instruction is None:
                     continue
 
                 risc_instr = self.risc.program[instruction.risc_idx]
-                rename_dict = {}
                 
-                for dep in risc_instr.register_dependencies:
-                    if dep.is_loop_invariant:
-                        if self.risc.program[dep.producers_idx[0]].renamed_dest_register is None:
-                            new_dest_register = self.next_free_non_rotating_register
-                            self.risc.program[dep.producers_idx[0]].renamed_dest_register = new_dest_register
-                            self.next_free_rotating_register += 1
-                        else:
-                            new_dest_register = self.risc.program[dep.producers_idx[0]].renamed_dest_register
+                if risc_instr.dest_register is None or risc_instr.dest_register == -1:
+                    continue
 
-                        rename_dict[dep.reg_tag] = new_dest_register
-                        
-                    else:
-                        assert dep.is_local or dep.is_interloop
-                       
-                        producer_idx = dep.producers_idx[0]
-                        consumer_idx = instruction.risc_idx
+                is_loop_invariant_dep = False
+                
+                # loop over all loop instructions to check if any of them is loop inv with us
+                for loop_risc_instr in self.risc.program[self.risc.BB1_start:]:
+                    for dep in loop_risc_instr.register_dependencies:
+                        if instruction.risc_idx in dep.producers_idx and dep.is_loop_invariant:
+                            # found an instruction that has us as interloop dep
+                            is_loop_invariant_dep = True
+                            break
 
-                        producer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos(producer_idx))
-                        consumer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos(consumer_idx))
-                        new_register = self.risc.program[producer_idx].renamed_dest_register + (consumer_stage - producer_stage)
-
-                        if dep.is_interloop:
-                            new_register += 1
-
-                        
-                # rename the instruction and keep the destination register unchanged
-                instruction.string_representation = \
-                    self.string_representation_after_register_rename(
-                            instruction,
-                            new_dest_register,
-                            rename_dict
-                            )
-
-        # rename destination registers in BB0
+                if is_loop_invariant_dep:
+                    # assign a new non-rotating register
+                    risc_instr.renamed_dest_register = self.next_free_non_rotating_register
+                    self.next_free_non_rotating_register += 1
+                
+        # rename destination registers in BB0 (interloop and local)
         for bundle in self.vliw.program[:self.vliw.start_loop]:
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 # ignore empty instructions
@@ -189,15 +173,20 @@ class RegisterRename:
                 if risc_instr.renamed_dest_register is not None:
                     continue
 
+                # don't want to rename
+                if risc_instr.dest_register is None or risc_instr.dest_register == -1:
+                    continue
+
                 is_interloop_dep = False
                 other_interloop_producer_risc_idx = None
 
                 # loop over all loop instructions to check if any of them has an interloop dep with us
-                for loop_risc_instruction_idx in range(self.risc.BB1_start, self.risc.BB2_start):
-                    loop_risc_instr = self.risc.program[loop_risc_instruction_idx]
+                for loop_risc_instr in self.risc.program[self.risc.BB1_start:self.risc.BB2_start]:
                     for dep in loop_risc_instr.register_dependencies:
                         if instruction.risc_idx in dep.producers_idx:
                             # found an instruction that has us as interloop dep
+                            # loop invariant instructions were already renamed, so this
+                            # has to be an interloop dep
                             is_interloop_dep = True
                             other_interloop_producer_risc_idx = dep.producers_idx[0]
                 
@@ -212,7 +201,7 @@ class RegisterRename:
                     # TODO Tifui: compute offset to add to register
                 
         
-        # rename destination registers in BB2
+        # rename destination registers in BB2 (local)
         for bundle in self.vliw.program[self.vliw.end_loop:]:
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 # ignore empty instructions
@@ -230,30 +219,53 @@ class RegisterRename:
                 risc_instr.renamed_dest_register = self.next_free_non_rotating_register
                 self.next_free_non_rotating_register += 1
 
-        # TODO: Compute post-loop deps
-        # compute dependencies and rename for BB0 and BB2
-        for bundle in self.vliw.program[:self.vliw.start_loop] + self.vliw.program[self.vliw.end_loop:]:
+        # rename 
+        for bundle_idx, bundle in enumerate(self.vliw.program):
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
-                rename_dict = {}
+                # ignore empty instructions
                 if instruction is None:
                     continue
 
                 risc_instr = self.risc.program[instruction.risc_idx]
+                rename_dict = {}
                 
                 for dep in risc_instr.register_dependencies:
-                    # if there are no dependencies allocate a new dummy register
-                    if dep.producers_idx == []:
-                        rename_dict[dep.reg_tag] = self.next_free_non_rotating_register
-                        self.next_free_non_rotating_register += 1
-                    elif dep.is_local:
-                        new_register = self.risc.program[dep.producers_idx[-1]].renamed_dest_register 
+                    if dep.is_loop_invariant:
+                        new_dest_register = self.risc.program[dep.producers_idx[0]].renamed_dest_register
+                        rename_dict[dep.reg_tag] = new_dest_register
+                        
+                    elif dep.is_local or dep.is_interloop:
+                        # not in loop
+                        if self.vliw.start_loop > bundle_idx or self.vliw.end_loop <= bundle_idx:
+                            assert dep.is_local
+                            new_dest_register = self.risc.program[dep.producers_idx[0]].renamed_dest_register
+                            rename_dict[dep.reg_tag] = new_dest_register
+                        else:
+                            producer_idx = dep.producers_idx[0]
+                            consumer_idx = instruction.risc_idx
+
+                            producer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos[producer_idx])
+                            consumer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos[consumer_idx])
+                            new_register = self.risc.program[producer_idx].renamed_dest_register + (consumer_stage - producer_stage)
+
+                            if dep.is_interloop:
+                                new_register += 1
+                            rename_dict[dep.reg_tag] = new_register
+                    elif dep.is_post_loop:
+                        producer_idx = dep.producers_idx[0]
+                        # consumer_idx = instruction.risc_idx
+
+                        producer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos[producer_idx])
+                        consumer_stage = self.vliw.no_stages
+                        new_register = self.risc.program[producer_idx].renamed_dest_register + (consumer_stage - producer_stage)
                         rename_dict[dep.reg_tag] = new_register
                     else:
-                        assert dep.is_post_loop
-                        # TODO:
-
-                # rename the instruction
-                # if len(rename_dict) > 0:
+                        # add dummy register
+                        assert dep.producers_idx == []
+                        rename_dict[dep.reg_tag] = self.next_free_non_rotating_register
+                        self.next_free_non_rotating_register += 1
+                        
+                # rename the instruction and keep the destination register unchanged
                 instruction.string_representation = \
                     self.string_representation_after_register_rename(
                             instruction,
@@ -272,6 +284,7 @@ class RegisterRename:
         """
         # should not have a new destination register if we didn't have one in the first place.
         # similarely, we should have one if we had a destination register initially.
+        # print(f"Instruction: {instruction.risc_idx}, new_dest_register: {new_dest_register}, str: {instruction.string_representation}")
         if instruction.dest_register == -1:
             assert new_dest_register is None
         else:

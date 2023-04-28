@@ -286,20 +286,23 @@ class VliwProgram:
         return result
 
     
-    def compress_loop_body(self):
+    def compress_loop_body(self, risc: risc_ds.RiscProgram):
         """
         Compresses the loop body in case of loop.pip. Only called in the end
         """
+        if risc.BB1_start == risc.BB2_start:
+            return
+
         prologue_0 = "mov p32, true"
         prologue_1 = f"mov EC {self.no_stages - 1}"
         prologue_bundle = VliwInstruction()
-        prologue_bundle.alu0 = VliwInstructionUnit(None, prologue_1, -1)
+        prologue_bundle.alu0 = VliwInstructionUnit(None, prologue_0, -1)
         prologue_bundle.alu1 = VliwInstructionUnit(None, prologue_1, None)
 
-
-        compressed_loop = [VliwInstruction()] * self.no_stages
-        for idx, bundle in list(enumerate(self.program))[self.start_loop:self.end_loop]:
-            predicate = f"(p{32 + self.get_stage(idx)}) "
+        # TODO: add bundle before
+        compressed_loop = [VliwInstruction() for _ in range(self.ii)]
+        for idx, bundle in enumerate(self.program[self.start_loop:self.end_loop]):
+            predicate = f"(p{32 + self.get_stage(idx + self.start_loop)}) "
             bundle_pos = idx % self.ii
             
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem, bundle.branch]:
@@ -308,20 +311,25 @@ class VliwProgram:
                 instruction.string_representation = predicate + instruction.string_representation
                
             if bundle.alu0 is not None:
-                assert self.program[bundle_pos].alu0 is None
-                self.program[bundle_pos].alu0 = bundle.alu0
+                assert compressed_loop[bundle_pos].alu0 is None
+                compressed_loop[bundle_pos].alu0 = bundle.alu0
                 
             if bundle.alu1 is not None:
-                assert self.program[bundle_pos].alu1 is None
-                self.program[bundle_pos].alu1 = bundle.alu1
+                assert compressed_loop[bundle_pos].alu1 is None
+                compressed_loop[bundle_pos].alu1 = bundle.alu1
 
             if bundle.mul is not None:
-                assert self.program[bundle_pos].mul is None
-                self.program[bundle_pos].mul = bundle.mul
+                assert compressed_loop[bundle_pos].mul is None
+                compressed_loop[bundle_pos].mul = bundle.mul
 
             if bundle.mem is not None:
-                assert self.program[bundle_pos].mem is None
-                self.program[bundle_pos].mem = bundle.mem
+                assert compressed_loop[bundle_pos].mem is None
+                compressed_loop[bundle_pos].mem = bundle.mem
+
+            if bundle.branch is not None:
+                assert compressed_loop[bundle_pos].branch is None
+                compressed_loop[bundle_pos].branch = bundle.branch
+
 
         self.program = self.program[:self.start_loop] + compressed_loop + self.program[self.end_loop:]
 

@@ -72,6 +72,6 @@ def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram
     renamer.rename_loop_pip()
     
     # compress loop body
-    result.compress_loop_body()
+    result.compress_loop_body(risc)
 
     return result
