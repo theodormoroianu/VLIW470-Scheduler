@@ -281,8 +281,8 @@ class VliwProgram:
         Returns the stage of an instruction inside BB1
         """
         assert self.start_loop <= vliw_instr_idx
-        result = (vliw_instr_idx - self.start_loop) // self.no_stages
-        assert result < self.ii
+        result = (vliw_instr_idx - self.start_loop) // self.ii
+        assert result < self.no_stages
         return result
 
 
