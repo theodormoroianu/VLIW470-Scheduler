@@ -170,7 +170,7 @@ class VliwProgram:
             self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos, ii)
             
     
-    def _compute_min_ii(self, risc: risc_ds.RiscProgram, instr_idx: int) -> int:
+    def _compute_min_ii_for_interloop_dep(self, risc: risc_ds.RiscProgram, instr_idx: int) -> int:
         """
         Computes the minimum II required to schedule instruction at index `instr_idx`
         """
@@ -178,10 +178,14 @@ class VliwProgram:
         ii = 1
         for dep in instruction.register_dependencies:
             if dep.is_interloop:
-                dep_idx = dep.producers_idx[0] # TEO TODO: If we have 2 producers, this will be the one from BB0, which is not always right.
+                # sanity check: if two producers, [0] has to be lower (in BB1)
+                if len(dep.producers_idx) == 2:
+                    assert dep.producers_idx[0] > dep.producers_idx[1]
+
+                dep_idx = dep.producers_idx[0]
                 dep_vliw_pos = self.risc_pos_to_vliw_pos[dep_idx]
                 dep_latency = risc.program[dep_idx].latency
-                instr_vliw_pos = self.risc_pos_to_vliw_pos[instr_idx + risc.BB1_start]
+                instr_vliw_pos = self.risc_pos_to_vliw_pos[instr_idx]
                 ii = max(ii, dep_vliw_pos + dep_latency - instr_vliw_pos)
         return ii
 
@@ -200,23 +204,20 @@ class VliwProgram:
         
 
         # determine where to put the loop so that the II is valid
-        ii = 1
+        ii = len(self.program) - loop_tag
         for idx in range(risc.BB1_start, risc.BB2_start):
-            ii = max(ii, self._compute_min_ii(risc, idx))
+            ii = max(ii, self._compute_min_ii_for_interloop_dep(risc, idx))
         
-        if ii <= len(self.program):
-            self.program += [VliwInstruction()] * (len(self.program) - ii + 1)
+        while len(self.program) < loop_tag + ii:
+            self.program += [VliwInstruction()]
 
-        # TEO TODO: Shouldn't it be self.program[-1]?
-        self.program[ii].branch = VliwInstructionUnit(
+        self.program[-1].branch = VliwInstructionUnit(
                                         dest_register=None, 
                                         string_representation=f"loop {loop_tag}",
                                         risc_idx=None
                                         )
 
 
-
-    # TODO: testing ... 100% it doesn't work
     def schedule_loop_pip_instructions(self, risc: risc_ds.RiscProgram, ii: int) -> bool:
         """
         Schedules instructions in BB1 in the context of a RISC program for `loop_pip`.
@@ -230,7 +231,7 @@ class VliwProgram:
             self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos, ii)
 
             # check if the II is large enough
-            if self._compute_min_ii(risc, idx) > ii:
+            if self._compute_min_ii_for_interloop_dep(risc, idx) > ii:
                 # restore the state of `self`(undo the scheduling)
                 self.unavailable_slots = set()
                 self.program = self.program[:schedule_start_pos]
