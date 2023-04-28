@@ -226,7 +226,8 @@ class VliwProgram:
         loop_tag = len(self.program)
         schedule_start_pos = len(self.program)
 
-        for idx in range(risc.BB1_start, risc.BB2_start):
+        # -1 because we ignore loop instruction
+        for idx in range(risc.BB1_start, risc.BB2_start - 1):
             instruction = risc.program[idx]
             self.schedule_risc_instruction(risc, instruction, idx, schedule_start_pos, ii)
 
@@ -245,15 +246,17 @@ class VliwProgram:
         # ignore any empty bundles
         while self.program[loop_tag].is_empty():
             loop_tag += 1
+
+        loop_pip_size = len(self.program) - loop_tag
+        while loop_pip_size % ii != 0:
+            self.program += [VliwInstruction()]
+            loop_pip_size = len(self.program - loop_tag)
         
         self.program[-1].branch = VliwInstructionUnit(
                                         dest_register=None, 
-                                        string_representation=f"loop {loop_tag}",
+                                        string_representation=f"loop.pip {loop_tag}",
                                         risc_idx=None
                                         )
-
-        loop_pip_size = len(self.program) - loop_tag
-        assert loop_pip_size % ii == 0
         
         self.no_stages = loop_pip_size // ii
         self.ii = ii
