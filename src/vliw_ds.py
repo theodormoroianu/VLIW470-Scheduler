@@ -108,7 +108,10 @@ class VliwProgram:
                 # not set
                 assert dep.producers_idx == []
                 continue
-
+            
+            # if interloop with a single producer, we can't rely on it
+            if dep.is_interloop and len(dep.producers_idx) == 1:
+                continue
             start_after_for_dep = self.risc_pos_to_vliw_pos[dep.producers_idx[-1]] + risc.program[dep.producers_idx[-1]].latency
             schedule_start_pos = max(schedule_start_pos, start_after_for_dep)
 
