@@ -283,7 +283,7 @@ class RegisterRename:
                         # consumer_idx = instruction.risc_idx
 
                         producer_stage = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos[producer_idx])
-                        consumer_stage = self.vliw.no_stages
+                        consumer_stage = self.vliw.no_stages - 1
                         new_register = self.risc.program[producer_idx].renamed_dest_register + (consumer_stage - producer_stage)
                         rename_dict[dep.reg_tag] = new_register
                     else:
