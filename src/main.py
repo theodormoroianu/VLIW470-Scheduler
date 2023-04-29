@@ -23,8 +23,11 @@ def main():
     risc_program = risc_ds.RiscProgram.load_from_list(input_file_content)
     
     print("File loaded.\nTrying to generate loop schedule...")
-    vliw_program = scheduler.generate_loop_schedule(risc_program)
-    json.dump(vliw_program.dump(), open(OUTPUT_SIMPLE_FILE, "w"))
+    try:
+        vliw_program = scheduler.generate_loop_schedule(risc_program)
+        json.dump(vliw_program.dump(), open(OUTPUT_SIMPLE_FILE, "w"))
+    except:
+        print("UNABLE TO SCHEDULE loop")
 
     print("Loop schedule generated.\nTrying to generate loop.pip schedule...")
     input_file_content = json.load(open(INPUT_FILE, "r"))
