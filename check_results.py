@@ -2,7 +2,7 @@ import json
 
 
 f1 = "cycles_pip.json" 
-f2 = "cycles_lool.json"
+f2 = "cycles_loop.json"
 
 d1 = json.load(open(f1, "r"))
 d2 = json.load(open(f2, "r"))

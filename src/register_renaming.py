@@ -177,11 +177,12 @@ class RegisterRename:
 
                 is_interloop_dep = False
                 other_interloop_producer_risc_idx = None
-
+                
                 # loop over all loop instructions to check if any of them has an interloop dep with us
                 for loop_risc_instr in self.risc.program[self.risc.BB1_start:self.risc.BB2_start]:
                     for dep in loop_risc_instr.register_dependencies:
                         if instruction.risc_idx in dep.producers_idx:
+                            assert dep.is_interloop and len(dep.producers_idx) == 2
                             # found an instruction that has us as interloop dep
                             # loop invariant instructions were already renamed, so this
                             # has to be an interloop dep
@@ -196,8 +197,8 @@ class RegisterRename:
                     # interloop dep, have to assign same register as the interloop one
                     risc_instr.renamed_dest_register = \
                         self.risc.program[other_interloop_producer_risc_idx].renamed_dest_register
-
-                    stage_other_producer = self.vliw.get_stage(self.vliw.risc_pos_to_vliw_pos[dep.producers_idx[0]])
+                    stage_other_producer = self.vliw.get_stage(
+                            self.vliw.risc_pos_to_vliw_pos[other_interloop_producer_risc_idx])
                     risc_instr.renamed_dest_register += (1 - stage_other_producer)
                 
         
