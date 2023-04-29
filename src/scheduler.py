@@ -30,7 +30,7 @@ def generate_loop_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram:
     # schedule instructions
     result.schedule_loopless_instructions(risc, "BB0")
 
-    if risc.BB1_start != len(risc.program):    
+    if risc.BB1_start != len(risc.program):
         result.schedule_loop_instructions_without_interloop_dep(risc)
         result.schedule_loopless_instructions(risc, "BB2")    
         result.fix_interloop_dependencies(risc)
@@ -56,7 +56,6 @@ def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram
 
     if risc.BB1_start != len(risc.program):
         ii = calculate_ii_lowerbound(risc)
-        # TEO TODO: Is this ok? Won't re-scheduling stuff break the object, which means we should make a copy each time?
         while not result.schedule_loop_pip_instructions(risc, ii):
             ii += 1
 

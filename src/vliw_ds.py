@@ -199,6 +199,20 @@ class VliwProgram:
         """
         Schedules instructions in BB1 in the context of a RISC program for `loop`
         """
+
+        if risc.BB1_start == risc.BB2_start:
+            # empty loop
+            new_bundle = VliwInstruction()
+            new_bundle.branch = VliwInstructionUnit(
+                None,
+                f"loop {len(self.program)}",
+                None
+            )
+            self.program.append(new_bundle)
+            self.start_loop = len(self.program) - 1
+            self.end_loop = self.start_loop + 1
+            return
+
         # schedule normally
         loop_tag = len(self.program)
         self.schedule_loopless_instructions(risc, "BB1")
@@ -236,6 +250,23 @@ class VliwProgram:
         Schedules instructions in BB1 in the context of a RISC program for `loop_pip`.
         It returns True on success or False if the II is too small.
         """
+
+        if risc.BB1_start == risc.BB2_start:
+            # empty loop
+            new_bundle = VliwInstruction()
+            new_bundle.branch = VliwInstructionUnit(
+                None,
+                f"loop.pip {len(self.program)}",
+                None
+            )
+            self.program.append(new_bundle)
+            self.ii = 1
+            self.no_stages = 1
+
+            self.start_loop = len(self.program) - 1
+            self.end_loop = self.start_loop + 1
+            return True
+        
         loop_tag = len(self.program)
         schedule_start_pos = len(self.program)
 
