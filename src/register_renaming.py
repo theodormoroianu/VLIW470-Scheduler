@@ -135,31 +135,55 @@ class RegisterRename:
         self.rename_dest_registers(self.vliw.start_loop, self.vliw.end_loop, True)
 
         # allocate non-rotating registers for loop invariant dependencies
-        for bundle in self.vliw.program[:self.vliw.start_loop]:
+        for bundle in self.vliw.program[self.vliw.start_loop:]:
             for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
                 # ignore empty instructions
                 if instruction is None:
                     continue
-
+                
+                # we want to check if it has any loop invariant dep, and if so, and it
+                # is not set, to set it
                 risc_instr = self.risc.program[instruction.risc_idx]
                 
-                if risc_instr.dest_register is None or risc_instr.dest_register == -1:
-                    continue
+                for dep in risc_instr.register_dependencies:
+                    if dep.is_loop_invariant:
+                        risc_bb0_idx = dep.producers_idx[0]
+                        assert len(dep.producers_idx) == 1
 
-                is_loop_invariant_dep = False
+                        risc_instruction = self.risc.program[risc_bb0_idx]
+                        assert risc_instruction.dest_register is not None
+
+                        if risc_instruction.renamed_dest_register is None:
+                            risc_instruction.renamed_dest_register = \
+                                self.next_free_non_rotating_register
+                            self.next_free_non_rotating_register += 1
+
+        # # allocate non-rotating registers for loop invariant dependencies
+        # for bundle in self.vliw.program[:self.vliw.start_loop]:
+        #     for instruction in [bundle.alu0, bundle.alu1, bundle.mul, bundle.mem]:
+        #         # ignore empty instructions
+        #         if instruction is None:
+        #             continue
+
+        #         risc_instr = self.risc.program[instruction.risc_idx]
                 
-                # loop over all loop instructions to check if any of them is loop inv with us
-                for loop_risc_instr in self.risc.program[self.risc.BB1_start:]:
-                    for dep in loop_risc_instr.register_dependencies:
-                        if instruction.risc_idx in dep.producers_idx and dep.is_loop_invariant:
-                            # found an instruction that has us as interloop dep
-                            is_loop_invariant_dep = True
-                            break
+        #         if risc_instr.dest_register is None or risc_instr.dest_register == -1:
+        #             continue
 
-                if is_loop_invariant_dep:
-                    # assign a new non-rotating register
-                    risc_instr.renamed_dest_register = self.next_free_non_rotating_register
-                    self.next_free_non_rotating_register += 1
+        #         is_loop_invariant_dep = False
+                
+        #         # loop over all loop instructions to check if any of them is loop inv with us
+        #         for loop_risc_instr in self.risc.program[self.risc.BB1_start:]:
+        #             for dep in loop_risc_instr.register_dependencies:
+        #                 if instruction.risc_idx in dep.producers_idx and dep.is_loop_invariant:
+        #                     # found an instruction that has us as interloop dep
+        #                     is_loop_invariant_dep = True
+        #                     break
+
+        #         if is_loop_invariant_dep:
+        #             # assign a new non-rotating register
+        #             risc_instr.renamed_dest_register = self.next_free_non_rotating_register
+        #             self.next_free_non_rotating_register += 1
                 
         # rename destination registers in BB0 (interloop and local)
         for bundle in self.vliw.program[:self.vliw.start_loop]:
