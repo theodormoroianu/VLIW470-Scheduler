@@ -1,37 +1,14 @@
-import data
+import risc_ds
+import vliw_ds
 from typing import Optional
+import register_renaming
 
-def try_to_find_schedule_with_given_II(risc: data.RiscProgram, is_pip: bool, ii: int = -1) -> Optional[data.VliwProgram]:
+def calculate_ii_lowerbound(risc: risc_ds.RiscProgram) -> int:
     """
-    Tries to find a schedule for our program, with a given initialization interval.
-    If `is_pip` == False, then `ii` must be set
-    This function exists as loop and loop.pip are quite similar, and it doesn't make sense
-    to do the initial / final stuff independently.
+    Finds lowerbound on II using the formula described in the handout
     """
-    # TODO: Implement this.
-    return None
-
-def generate_loop_schedule(risc: data.RiscProgram) -> data.VliwProgram:
-    """
-    Generates scheduling for loop
-    """
-    result = try_to_find_schedule_with_given_II(risc, False)
-    assert result is not None
-    return result
-
-
-def generate_loop_pip_schedule(risc: data.RiscProgram) -> data.VliwProgram:
-    """
-    Generates scheduling for loop.pip
-    """
-    # If no loop is present, then loop.pip is essentially a normal loop
-    if risc.BB1 == []:
-        print(f"No loop detected. Generating loop.pip as a loop schedule.")
-        return generate_loop_schedule(risc)
-    
-    # find lowerbound on II
     nr_alu_instr, nr_mul_instr, nr_mem_instr = 0, 0, 0
-    for instr in risc.BB1:
+    for instr in risc.program[risc.BB1_start:risc.BB2_start]:
         if instr.is_alu:
             nr_alu_instr += 1
         elif instr.is_mul:
@@ -41,18 +18,59 @@ def generate_loop_pip_schedule(risc: data.RiscProgram) -> data.VliwProgram:
         else:
             assert False
     
-    # compute the lowerbound on the required ii
-    ii = max([(nr_alu_instr + 1) // 2, nr_mul_instr, nr_mem_instr])
+    return max([(nr_alu_instr + 1) // 2, nr_mul_instr, nr_mem_instr])
 
-    # sequentially search for a working ii
-    while True:
-        # sanitization: ii should be less than 1000
-        # TODO: Check this is actually true
-        if ii > 1000:
-            raise "Stopped searching for schedule. ii too large"
-        
-        result = try_to_find_schedule_with_given_II(risc, True, ii=ii)
-        if result is not None:
-            return result
-        # increase ii, as the previous ii was too tight
-        ii += 1
+
+def generate_loop_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram:
+    """
+    Generates scheduling for loop
+    """
+    result = vliw_ds.VliwProgram()
+    
+    # schedule instructions
+    result.schedule_loopless_instructions(risc, "BB0")
+
+    if risc.BB1_start != len(risc.program):
+        result.schedule_loop_instructions_without_interloop_dep(risc)
+        result.schedule_loopless_instructions(risc, "BB2")    
+        result.fix_interloop_dependencies(risc)
+    else:
+        print("No loop instructions found for loop. Stopping.")
+    
+    # do register renaming
+    renamer = register_renaming.RegisterRename(risc, result)
+    renamer.rename_loop()
+    
+    return result
+    
+
+def generate_loop_pip_schedule(risc: risc_ds.RiscProgram) -> vliw_ds.VliwProgram:
+    """
+    Generates scheduling for loop.pip
+    """
+    result = vliw_ds.VliwProgram()
+    
+    # schedule instructions
+    result.schedule_loopless_instructions(risc, "BB0")
+
+
+    if risc.BB1_start != len(risc.program):
+        ii = calculate_ii_lowerbound(risc)
+        while not result.schedule_loop_pip_instructions(risc, ii):
+            ii += 1
+
+        print(f"Pipelined with an II of {ii}.")
+
+        result.schedule_loopless_instructions(risc, "BB2")
+    else:
+        result.start_loop = result.end_loop = len(result.program)
+        print("No loop instructions found for loop. Stopping.")
+
+    # do register renaming
+    renamer = register_renaming.RegisterRename(risc, result)
+    renamer.rename_loop_pip()
+    
+    # compress loop body
+    result.compress_loop_body(risc)
+
+    return result
