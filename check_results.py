@@ -14,6 +14,7 @@ if last_rf_1.intersection(last_rf_2) == last_rf_2:
     print("OK!!!!")
 else:
     print("WRONG!!!")
+    exit(1)
 
 print("\n\PhysicalRegisterFile:\n\n")
 print(last_rf_1)

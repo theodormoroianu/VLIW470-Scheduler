@@ -9,14 +9,9 @@ import vliw_ds
 import scheduler
 
 def main():
-    if False:
-        INPUT_FILE = "test/18/input.json" # sys.argv[1]
-        OUTPUT_SIMPLE_FILE = "loop.json" # sys.argv[2]
-        OUTPUT_PIP_FILE = "loop_pip.json" # sys.argv[3]
-    else:
-        INPUT_FILE = sys.argv[1]
-        OUTPUT_SIMPLE_FILE = sys.argv[2]
-        OUTPUT_PIP_FILE =  sys.argv[3]
+    INPUT_FILE = sys.argv[1]
+    OUTPUT_SIMPLE_FILE = sys.argv[2]
+    OUTPUT_PIP_FILE =  sys.argv[3]
 
     print("Loading file...")
     input_file_content = json.load(open(INPUT_FILE, "r"))

@@ -126,6 +126,7 @@ class RegisterRename:
                         -1
                     )
                     break
+                line += 1
 
 
     def rename_loop_pip(self):

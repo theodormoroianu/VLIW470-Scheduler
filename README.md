@@ -1,13 +1,14 @@
 # VLIW470-Scheduler
 Scheduler for a custom VLIW processor.
 
+#### Student 1:
+Name: Theodor-Pierre Moroianu
 
-## Stuff To Consider
+Sciper: XXXXXXX
 
 
+#### Student 2:
+Name: Ioan-Alexandru Tifui 
 
-### Edge Cases
+Sciper: 367493
 
-1. `mul` at the end of BB0: Should we always add nops, or just if it's necessary?
-
-2. empty loop
